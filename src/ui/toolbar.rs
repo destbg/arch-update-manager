@@ -245,7 +245,7 @@ fn install_selected_packages_ui(
 
     let window_clone = window.clone();
     glib::timeout_add_local_once(
-        Duration::from_millis(200),
+        Duration::from_millis(500),
         move || match install_selected_packages(selected_packages) {
             Ok(()) => {
                 println!("Package installation initiated successfully");
