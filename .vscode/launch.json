@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug executable 'arch-update-manager'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "run",
+                    "--bin=arch-update-manager"
+                ]
+            },
+            "args": []
+        },
+        {
+            "name": "Debug unit tests in executable 'arch-update-manager'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--bin=arch-update-manager"
+                ]
+            }
+        }
+    ]
+}

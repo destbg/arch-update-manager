@@ -1,0 +1,12 @@
+[package]
+name = "arch-update-manager"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+gtk4 = "0.10.1"
+glib = "0.21.3"
+gio = "0.21.2"
+anyhow = "1.0"
+regex = "1.12.2"
+futures = "0.3.31"

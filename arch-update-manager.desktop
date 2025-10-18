@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Arch Update Manager
+Comment=A GTK4-based update manager for Arch Linux
+Exec=pkexec arch-update-manager
+Icon=arch-update-manager
+Terminal=false
+Categories=System;PackageManager;
+Keywords=arch;update;manager;pacman;system;
