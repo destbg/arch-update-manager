@@ -50,12 +50,21 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("no packages to upgrade") {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        if stderr.contains("no packages to upgrade")
+            || stderr.trim().is_empty() && stdout.trim().is_empty()
+        {
             return Ok(Vec::new());
         }
+
         return Err(UpdateError::CommandFailed(format!(
             "pacman -Qu failed: {}",
-            stderr
+            if !stderr.is_empty() {
+                &stderr
+            } else {
+                "Exit code 1 with no output"
+            }
         )));
     }
 

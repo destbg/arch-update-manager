@@ -2,6 +2,7 @@ use crate::helpers::package_updates::get_package_updates;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::info_panel::create_info_panel;
 use crate::ui::loading::create_loading_page;
+use crate::ui::no_updates::create_no_updates_page;
 use crate::ui::package_list::{create_package_list, update_statusbar};
 use crate::ui::package_object::PackageUpdateObject;
 use crate::ui::toolbar::create_toolbar;
@@ -29,6 +30,9 @@ pub fn build_ui(app: &Application) {
 
     let loading_box = create_loading_page();
     stack.add_named(&loading_box, Some("loading"));
+
+    let no_updates_box = create_no_updates_page();
+    stack.add_named(&no_updates_box, Some("no-updates"));
 
     let content_box = create_main_content();
     stack.add_named(&content_box, Some("content"));
@@ -110,34 +114,57 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
 
         match packages_result {
             Ok(Ok(packages)) => {
-                if let Some(paned) = content_box
+                if packages.is_empty() {
+                    stack.set_visible_child_name("no-updates");
+                    return;
+                }
+
+                let paned = content_box
                     .last_child()
                     .and_then(|child| child.prev_sibling())
-                    .and_downcast::<Paned>()
-                {
-                    if let Some(scrolled) = paned.start_child().and_downcast::<ScrolledWindow>() {
-                        if let Some(column_view) = scrolled.child().and_downcast::<ColumnView>() {
-                            if let Some(selection_model) = column_view.model() {
-                                if let Some(list_store) = selection_model
-                                    .downcast_ref::<SingleSelection>()
-                                    .and_then(|sm| sm.model())
-                                    .and_downcast::<ListStore>()
-                                {
-                                    list_store.remove_all();
+                    .and_downcast::<Paned>();
 
-                                    for package in packages {
-                                        list_store.append(&PackageUpdateObject::new(package));
-                                    }
+                let Some(paned) = paned else {
+                    eprintln!("Could not find paned widget");
+                    return;
+                };
 
-                                    if let Some(statusbar) =
-                                        content_box.last_child().and_downcast::<Statusbar>()
-                                    {
-                                        update_statusbar(&statusbar, &list_store);
-                                    }
-                                }
-                            }
-                        }
-                    }
+                let scrolled = paned.start_child().and_downcast::<ScrolledWindow>();
+                let Some(scrolled) = scrolled else {
+                    eprintln!("Could not find scrolled window");
+                    return;
+                };
+
+                let column_view = scrolled.child().and_downcast::<ColumnView>();
+                let Some(column_view) = column_view else {
+                    eprintln!("Could not find column view");
+                    return;
+                };
+
+                let selection_model = column_view.model();
+                let Some(selection_model) = selection_model else {
+                    eprintln!("Could not find selection model");
+                    return;
+                };
+
+                let list_store = selection_model
+                    .downcast_ref::<SingleSelection>()
+                    .and_then(|sm| sm.model())
+                    .and_downcast::<ListStore>();
+
+                let Some(list_store) = list_store else {
+                    eprintln!("Could not find list store");
+                    return;
+                };
+
+                list_store.remove_all();
+
+                for package in packages {
+                    list_store.append(&PackageUpdateObject::new(package));
+                }
+
+                if let Some(statusbar) = content_box.last_child().and_downcast::<Statusbar>() {
+                    update_statusbar(&statusbar, &list_store);
                 }
 
                 stack.set_visible_child_name("content");

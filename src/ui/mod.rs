@@ -2,6 +2,7 @@ pub mod dialogs;
 pub mod info_panel;
 pub mod loading;
 pub mod main_window;
+pub mod no_updates;
 pub mod package_list;
 pub mod package_object;
 pub mod toolbar;
