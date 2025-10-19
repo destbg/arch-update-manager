@@ -1,4 +1,3 @@
-pub mod install_packages;
+pub mod get_navigation_stack;
 pub mod package_updates;
-pub mod terminal;
 pub mod timeshift;

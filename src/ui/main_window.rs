@@ -1,10 +1,11 @@
 use crate::helpers::package_updates::get_package_updates;
+use crate::models::package_object::PackageUpdateObject;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::info_panel::create_info_panel;
 use crate::ui::loading::create_loading_page;
 use crate::ui::no_updates::create_no_updates_page;
 use crate::ui::package_list::{create_package_list, update_statusbar};
-use crate::ui::package_object::PackageUpdateObject;
+use crate::ui::terminal_page::create_terminal_page;
 use crate::ui::toolbar::create_toolbar;
 use gio::ListStore;
 use glib::clone;
@@ -33,6 +34,9 @@ pub fn build_ui(app: &Application) {
 
     let no_updates_box = create_no_updates_page();
     stack.add_named(&no_updates_box, Some("no-updates"));
+
+    let terminal_box = create_terminal_page();
+    stack.add_named(&terminal_box, Some("terminal"));
 
     let content_box = create_main_content();
     stack.add_named(&content_box, Some("content"));

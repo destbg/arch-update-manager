@@ -29,7 +29,7 @@ impl PackageUpdateObject {
     pub fn new(data: PackageUpdate) -> Self {
         let obj: Self = Object::builder().build();
         obj.imp().data.replace(data);
-        obj
+        return obj;
     }
 
     pub fn data(&self) -> PackageUpdate {

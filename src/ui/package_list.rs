@@ -1,4 +1,4 @@
-use crate::ui::package_object::PackageUpdateObject;
+use crate::models::package_object::PackageUpdateObject;
 use gio::ListStore;
 use glib::{clone, format_size};
 use gtk4::prelude::*;

@@ -1,19 +1,20 @@
 use crate::constants::TIMESHIFT_COMMENT;
-use crate::helpers::install_packages::{check_installation_status, install_selected_packages};
+use crate::helpers::get_navigation_stack::get_navigation_stack;
 use crate::helpers::timeshift::{create_timeshift_snapshot, delete_old_timeshift_snapshot};
+use crate::models::package_object::PackageUpdateObject;
 use crate::ui::dialogs::{create_progress_dialog, show_error_dialog};
 use crate::ui::package_list::update_statusbar;
-use crate::ui::package_object::PackageUpdateObject;
 use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, CheckButton, ColumnView, Image, Orientation, Paned,
-    ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
+    ApplicationWindow, Box as GtkBox, Button, CheckButton, ColumnView, Frame, Image, Orientation,
+    Paned, ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
 };
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use vte4::prelude::*;
 
 pub fn create_toolbar() -> (GtkBox, CheckButton) {
     let toolbar_container = GtkBox::new(Orientation::Vertical, 6);
@@ -64,18 +65,12 @@ pub fn create_toolbar() -> (GtkBox, CheckButton) {
         #[weak]
         toolbar,
         move |_| {
-            if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
-                if let Some(main_box) = window.child().and_downcast::<GtkBox>() {
-                    if let Some(stack) = main_box.first_child().and_downcast::<Stack>() {
-                        if let Some(content_box) =
-                            stack.child_by_name("content").and_downcast::<GtkBox>()
-                        {
-                            stack.set_visible_child_name("loading");
-                            crate::ui::main_window::load_packages(stack, content_box, window);
-                        }
-                    }
-                }
-            }
+            let Some((stack, content_box, window)) = get_navigation_stack(&toolbar) else {
+                return;
+            };
+
+            stack.set_visible_child_name("loading");
+            crate::ui::main_window::load_packages(stack, content_box, window);
         }
     ));
 
@@ -122,40 +117,43 @@ pub fn create_toolbar() -> (GtkBox, CheckButton) {
 }
 
 fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Statusbar)> {
-    if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
-        if let Some(main_box) = window.child().and_downcast::<GtkBox>() {
-            if let Some(stack) = main_box.first_child().and_downcast::<Stack>() {
-                if let Some(content_box) = stack.child_by_name("content").and_downcast::<GtkBox>() {
-                    if let Some(paned) = content_box
-                        .last_child()
-                        .and_then(|child| child.prev_sibling())
-                        .and_downcast::<Paned>()
-                    {
-                        if let Some(scrolled) = paned.start_child().and_downcast::<ScrolledWindow>()
-                        {
-                            if let Some(column_view) = scrolled.child().and_downcast::<ColumnView>()
-                            {
-                                if let Some(selection_model) = column_view.model() {
-                                    if let Some(list_store) = selection_model
-                                        .downcast_ref::<SingleSelection>()
-                                        .and_then(|sm| sm.model())
-                                        .and_downcast::<ListStore>()
-                                    {
-                                        if let Some(statusbar) =
-                                            content_box.last_child().and_downcast::<Statusbar>()
-                                        {
-                                            return Some((list_store, statusbar));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return None;
+    let Some((_, content_box, _)) = get_navigation_stack(toolbar) else {
+        return None;
+    };
+
+    let Some(paned) = content_box
+        .last_child()
+        .and_then(|child| child.prev_sibling())
+        .and_downcast::<Paned>()
+    else {
+        return None;
+    };
+
+    let Some(scrolled) = paned.start_child().and_downcast::<ScrolledWindow>() else {
+        return None;
+    };
+
+    let Some(column_view) = scrolled.child().and_downcast::<ColumnView>() else {
+        return None;
+    };
+
+    let Some(selection_model) = column_view.model() else {
+        return None;
+    };
+
+    let Some(list_store) = selection_model
+        .downcast_ref::<SingleSelection>()
+        .and_then(|sm| sm.model())
+        .and_downcast::<ListStore>()
+    else {
+        return None;
+    };
+
+    let Some(statusbar) = content_box.last_child().and_downcast::<Statusbar>() else {
+        return None;
+    };
+
+    return Some((list_store, statusbar));
 }
 
 fn clear_all_selections(store: &ListStore, statusbar: &Statusbar) {
@@ -214,7 +212,6 @@ fn install_selected_packages_ui(
     }
 
     if selected_packages.is_empty() {
-        eprintln!("No packages selected for installation");
         return Ok(());
     }
 
@@ -235,35 +232,14 @@ fn install_selected_packages_ui(
         return Ok(());
     }
 
-    println!("Installing packages: {:?}", selected_packages);
-
-    let install_dialog = create_progress_dialog(
-        &window.upcast_ref::<gtk4::Window>(),
-        "Installing Packages",
-        "Installing packages in terminal...\n\nPlease complete the installation in the terminal window and close this dialog when done.",
-    );
-
-    let window_clone = window.clone();
-    glib::timeout_add_local_once(
-        Duration::from_millis(500),
-        move || match install_selected_packages(selected_packages) {
-            Ok(()) => {
-                println!("Package installation initiated successfully");
-                monitor_installation_completion(install_dialog, window_clone.clone());
-            }
-            Err(e) => {
-                install_dialog.close();
-                eprintln!("Failed to start package installation: {}", e);
-                show_error_dialog(
-                    &window_clone.upcast_ref::<gtk4::Window>(),
-                    "Installation Error",
-                    &format!("Failed to start package installation: {}", e),
-                );
-            }
-        },
-    );
-
-    Ok(())
+    if let Err(e) = navigate_to_terminal_and_install(window, selected_packages) {
+        show_error_dialog(
+            &window.upcast_ref::<gtk4::Window>(),
+            "Installation Error",
+            &format!("Failed to start installation: {}", e),
+        );
+    }
+    return Ok(());
 }
 
 fn execute_timeshift_operations_async(
@@ -292,27 +268,14 @@ fn execute_timeshift_operations_async(
         Ok(("success", _)) => {
             progress_dialog.close();
 
-            let install_dialog = create_progress_dialog(
-                &window.upcast_ref::<gtk4::Window>(),
-                "Installing Packages",
-                "Installing packages in terminal...\n\nPlease complete the installation in the terminal window.",
-            );
-
-            let packages = selected_packages_clone.clone();
-            println!("Installing packages: {:?}", packages);
-
-            if let Err(e) = install_selected_packages(packages) {
-                eprintln!("Failed to start package installation: {}", e);
-                install_dialog.close();
+            if let Err(e) =
+                navigate_to_terminal_and_install(&window, selected_packages_clone.clone())
+            {
                 show_error_dialog(
                     &window.upcast_ref::<gtk4::Window>(),
                     "Installation Error",
-                    &format!("Failed to start package installation: {}", e),
+                    &format!("Failed to start installation: {}", e),
                 );
-            } else {
-                println!("Package installation initiated successfully");
-
-                monitor_installation_completion(install_dialog, window.clone());
             }
 
             glib::ControlFlow::Break
@@ -335,45 +298,6 @@ fn execute_timeshift_operations_async(
     });
 }
 
-fn monitor_installation_completion(install_dialog: gtk4::Dialog, window: ApplicationWindow) {
-    glib::timeout_add_local(
-        Duration::from_millis(1000),
-        move || match check_installation_status() {
-            Some(success) => {
-                install_dialog.close();
-
-                if success {
-                    println!("Package installation completed successfully!");
-
-                    refresh_package_list(&window);
-                } else {
-                    println!("Package installation failed!");
-                    show_error_dialog(
-                        &window.upcast_ref::<gtk4::Window>(),
-                        "Installation Failed",
-                        "Package installation failed. Please check the terminal output for details.",
-                    );
-                }
-
-                glib::ControlFlow::Break
-            }
-            None => glib::ControlFlow::Continue,
-        },
-    );
-}
-
-fn refresh_package_list(window: &ApplicationWindow) {
-    if let Some(main_box) = window.child().and_downcast::<GtkBox>() {
-        if let Some(stack) = main_box.first_child().and_downcast::<Stack>() {
-            if let Some(content_box) = stack.child_by_name("content").and_downcast::<GtkBox>() {
-                stack.set_visible_child_name("loading");
-
-                crate::ui::main_window::load_packages(stack, content_box, window.clone());
-            }
-        }
-    }
-}
-
 fn create_button_content(icon_name: &str, label_text: &str) -> GtkBox {
     let button_box = GtkBox::new(Orientation::Horizontal, 6);
     button_box.set_halign(gtk4::Align::Center);
@@ -385,4 +309,77 @@ fn create_button_content(icon_name: &str, label_text: &str) -> GtkBox {
     button_box.append(&label);
 
     return button_box;
+}
+
+fn find_terminal_in_box(container: &GtkBox) -> Option<Frame> {
+    let mut child = container.first_child();
+    while let Some(widget) = child {
+        if let Some(frame) = widget.downcast_ref::<Frame>() {
+            if frame.label().is_some_and(|label| label == "Terminal") {
+                return Some(frame.clone());
+            }
+        }
+
+        if let Some(child_box) = widget.downcast_ref::<GtkBox>() {
+            if let Some(found) = find_terminal_in_box(child_box) {
+                return Some(found);
+            }
+        }
+        child = widget.next_sibling();
+    }
+    return None;
+}
+
+fn start_installation_in_terminal(
+    terminal: &vte4::Terminal,
+    packages: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut command_args = vec!["sudo".to_string(), "pacman".to_string(), "-S".to_string()];
+    command_args.extend(packages);
+
+    let args: Vec<&str> = command_args.iter().map(|s| s.as_str()).collect();
+
+    terminal.spawn_async(
+        vte4::PtyFlags::DEFAULT,   // no special flags
+        None,                      // default working directory
+        &args,                     // command arguments
+        &[],                       // default environment
+        glib::SpawnFlags::DEFAULT, // no special flags
+        || {},                     // child setup function
+        -1,                        // timeout
+        None::<&gio::Cancellable>, // cancellable
+        |result| {
+            if let Err(e) = result {
+                eprintln!("Failed to spawn pacman in terminal: {}", e);
+            }
+        },
+    );
+
+    return Ok(());
+}
+
+fn navigate_to_terminal_and_install(
+    window: &ApplicationWindow,
+    packages: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(main_box) = window.child().and_downcast::<GtkBox>() else {
+        return Err("Could not find main box".into());
+    };
+    let Some(stack) = main_box.first_child().and_downcast::<Stack>() else {
+        return Err("Could not find stack".into());
+    };
+    let Some(terminal_box) = stack.child_by_name("terminal").and_downcast::<GtkBox>() else {
+        return Err("Could not find terminal box".into());
+    };
+    let Some(terminal_frame) = find_terminal_in_box(&terminal_box) else {
+        return Err("Could not find terminal frame".into());
+    };
+    let Some(terminal) = terminal_frame.child().and_downcast::<vte4::Terminal>() else {
+        return Err("Could not find terminal widget".into());
+    };
+
+    stack.set_visible_child_name("terminal");
+    start_installation_in_terminal(&terminal, packages)?;
+
+    return Ok(());
 }

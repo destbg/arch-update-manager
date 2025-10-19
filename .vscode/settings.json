@@ -1,11 +1,13 @@
 {
     "cSpell.words": [
         "autoselect",
+        "dbus",
         "destbg",
         "halign",
         "hexpand",
         "pacman",
         "pango",
+        "scrollback",
         "timeshift",
         "vexpand",
         "xalign",

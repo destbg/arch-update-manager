@@ -1,13 +1,15 @@
 use glib::clone;
 use gtk4::prelude::*;
-use gtk4::{ApplicationWindow, Box as GtkBox, Button, Image, Label, Orientation, Stack};
+use gtk4::{Box as GtkBox, Button, Image, Label, Orientation};
+
+use crate::helpers::get_navigation_stack::get_navigation_stack;
 
 pub fn create_no_updates_page() -> GtkBox {
     let no_updates_box = GtkBox::new(Orientation::Vertical, 20);
     no_updates_box.set_valign(gtk4::Align::Center);
     no_updates_box.set_halign(gtk4::Align::Center);
 
-    let icon = Image::from_icon_name("dialog-information-symbolic");
+    let icon = Image::from_icon_name("object-select-symbolic");
     icon.set_pixel_size(64);
     icon.add_css_class("success");
 
@@ -25,18 +27,7 @@ pub fn create_no_updates_page() -> GtkBox {
         #[weak]
         no_updates_box,
         move |_| {
-            if let Some(window) = no_updates_box.root().and_downcast::<ApplicationWindow>() {
-                if let Some(main_box) = window.child().and_downcast::<GtkBox>() {
-                    if let Some(stack) = main_box.first_child().and_downcast::<Stack>() {
-                        if let Some(content_box) =
-                            stack.child_by_name("content").and_downcast::<GtkBox>()
-                        {
-                            stack.set_visible_child_name("loading");
-                            crate::ui::main_window::load_packages(stack, content_box, window);
-                        }
-                    }
-                }
-            }
+            handle_refresh_click(&no_updates_box);
         }
     ));
 
@@ -46,4 +37,13 @@ pub fn create_no_updates_page() -> GtkBox {
     no_updates_box.append(&refresh_btn);
 
     return no_updates_box;
+}
+
+fn handle_refresh_click(no_updates_box: &GtkBox) {
+    let Some((stack, content_box, window)) = get_navigation_stack(no_updates_box) else {
+        return;
+    };
+
+    stack.set_visible_child_name("loading");
+    crate::ui::main_window::load_packages(stack, content_box, window);
 }
