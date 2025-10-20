@@ -1,5 +1,8 @@
-use crate::constants::TIMESHIFT_COMMENT;
+use crate::constants::{AUR_NAME, TIMESHIFT_COMMENT};
+use crate::helpers::aur::install_aur_packages;
 use crate::helpers::get_navigation_stack::get_navigation_stack;
+use crate::helpers::settings::load_settings;
+use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::timeshift::{create_timeshift_snapshot, delete_old_timeshift_snapshot};
 use crate::models::package_object::PackageUpdateObject;
 use crate::ui::dialogs::{create_progress_dialog, show_error_dialog};
@@ -8,15 +11,14 @@ use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, CheckButton, ColumnView, Frame, Image, Orientation,
-    Paned, ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
+    ApplicationWindow, Box as GtkBox, Button, ColumnView, Frame, Image, Orientation, Paned,
+    ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
 };
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
-use vte4::prelude::*;
 
-pub fn create_toolbar() -> (GtkBox, CheckButton) {
+pub fn create_toolbar() -> GtkBox {
     let toolbar_container = GtkBox::new(Orientation::Vertical, 6);
     toolbar_container.set_margin_start(6);
     toolbar_container.set_margin_end(6);
@@ -79,8 +81,6 @@ pub fn create_toolbar() -> (GtkBox, CheckButton) {
     let separator2 = Separator::new(Orientation::Vertical);
     toolbar.append(&separator2);
 
-    let timeshift_checkbox = CheckButton::with_label("Create Timeshift snapshot before update");
-
     let install_btn = Button::new();
     install_btn.add_css_class("suggested-action");
     install_btn.set_child(Some(&create_button_content(
@@ -90,12 +90,11 @@ pub fn create_toolbar() -> (GtkBox, CheckButton) {
     install_btn.connect_clicked(clone!(
         #[weak]
         toolbar,
-        #[weak]
-        timeshift_checkbox,
         move |_| {
             if let Some((store, _statusbar)) = find_store_and_statusbar(&toolbar) {
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
-                    let create_snapshot = timeshift_checkbox.is_active();
+                    let settings = load_settings();
+                    let create_snapshot = settings.create_timeshift_snapshot;
                     if let Err(e) = install_selected_packages_ui(&store, &window, create_snapshot) {
                         eprintln!("Failed to install packages: {}", e);
                     }
@@ -106,14 +105,8 @@ pub fn create_toolbar() -> (GtkBox, CheckButton) {
     toolbar.append(&install_btn);
 
     toolbar_container.append(&toolbar);
-    timeshift_checkbox.set_active(true);
-    timeshift_checkbox.set_margin_start(6);
-    timeshift_checkbox.set_margin_end(6);
-    timeshift_checkbox.set_margin_top(3);
 
-    toolbar_container.append(&timeshift_checkbox);
-
-    return (toolbar_container, timeshift_checkbox);
+    return toolbar_container;
 }
 
 fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Statusbar)> {
@@ -199,19 +192,24 @@ fn install_selected_packages_ui(
     window: &ApplicationWindow,
     create_snapshot: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut selected_packages = Vec::new();
+    let mut official_packages = Vec::new();
+    let mut aur_packages = Vec::new();
     let n_items = store.n_items();
 
     for i in 0..n_items {
         if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
             let data = item.data();
             if data.selected {
-                selected_packages.push(data.name);
+                if data.repository == AUR_NAME {
+                    aur_packages.push(data.name);
+                } else {
+                    official_packages.push(data.name);
+                }
             }
         }
     }
 
-    if selected_packages.is_empty() {
+    if official_packages.is_empty() && aur_packages.is_empty() {
         return Ok(());
     }
 
@@ -224,7 +222,8 @@ fn install_selected_packages_ui(
         progress_dialog.show();
 
         execute_timeshift_operations_async(
-            selected_packages.clone(),
+            official_packages.clone(),
+            aur_packages.clone(),
             window.clone(),
             progress_dialog,
         );
@@ -232,7 +231,7 @@ fn install_selected_packages_ui(
         return Ok(());
     }
 
-    if let Err(e) = navigate_to_terminal_and_install(window, selected_packages) {
+    if let Err(e) = navigate_to_terminal_and_install(window, official_packages, aur_packages) {
         show_error_dialog(
             &window.upcast_ref::<gtk4::Window>(),
             "Installation Error",
@@ -243,12 +242,14 @@ fn install_selected_packages_ui(
 }
 
 fn execute_timeshift_operations_async(
-    selected_packages: Vec<String>,
+    official_packages: Vec<String>,
+    aur_packages: Vec<String>,
     window: ApplicationWindow,
     progress_dialog: gtk4::Dialog,
 ) {
     let (tx, rx) = mpsc::channel();
-    let selected_packages_clone = selected_packages.clone();
+    let official_packages_clone = official_packages.clone();
+    let aur_packages_clone = aur_packages.clone();
 
     thread::spawn(move || match create_timeshift_snapshot(TIMESHIFT_COMMENT) {
         Ok(newest) => match delete_old_timeshift_snapshot(TIMESHIFT_COMMENT, &newest) {
@@ -268,9 +269,11 @@ fn execute_timeshift_operations_async(
         Ok(("success", _)) => {
             progress_dialog.close();
 
-            if let Err(e) =
-                navigate_to_terminal_and_install(&window, selected_packages_clone.clone())
-            {
+            if let Err(e) = navigate_to_terminal_and_install(
+                &window,
+                official_packages_clone.clone(),
+                aur_packages_clone.clone(),
+            ) {
                 show_error_dialog(
                     &window.upcast_ref::<gtk4::Window>(),
                     "Installation Error",
@@ -330,7 +333,7 @@ fn find_terminal_in_box(container: &GtkBox) -> Option<Frame> {
     return None;
 }
 
-fn start_installation_in_terminal(
+fn start_pacman_installation_in_terminal(
     terminal: &vte4::Terminal,
     packages: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -339,28 +342,43 @@ fn start_installation_in_terminal(
 
     let args: Vec<&str> = command_args.iter().map(|s| s.as_str()).collect();
 
-    terminal.spawn_async(
-        vte4::PtyFlags::DEFAULT,   // no special flags
-        None,                      // default working directory
-        &args,                     // command arguments
-        &[],                       // default environment
-        glib::SpawnFlags::DEFAULT, // no special flags
-        || {},                     // child setup function
-        -1,                        // timeout
-        None::<&gio::Cancellable>, // cancellable
-        |result| {
-            if let Err(e) = result {
-                eprintln!("Failed to spawn pacman in terminal: {}", e);
-            }
-        },
-    );
+    spawn_terminal(terminal, args);
+
+    return Ok(());
+}
+
+fn start_aur_installation_in_terminal(
+    terminal: &vte4::Terminal,
+    packages: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let command_parts = install_aur_packages(packages)?;
+    let args: Vec<&str> = command_parts.iter().map(|s| s.as_str()).collect();
+
+    spawn_terminal(terminal, args);
+
+    return Ok(());
+}
+
+fn start_mixed_installation_in_terminal(
+    terminal: &vte4::Terminal,
+    official_packages: Vec<String>,
+    aur_packages: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut all_packages = official_packages;
+    all_packages.extend(aur_packages);
+
+    let command_parts = install_aur_packages(all_packages)?;
+    let args: Vec<&str> = command_parts.iter().map(|s| s.as_str()).collect();
+
+    spawn_terminal(terminal, args);
 
     return Ok(());
 }
 
 fn navigate_to_terminal_and_install(
     window: &ApplicationWindow,
-    packages: Vec<String>,
+    official_packages: Vec<String>,
+    aur_packages: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(main_box) = window.child().and_downcast::<GtkBox>() else {
         return Err("Could not find main box".into());
@@ -379,7 +397,14 @@ fn navigate_to_terminal_and_install(
     };
 
     stack.set_visible_child_name("terminal");
-    start_installation_in_terminal(&terminal, packages)?;
+
+    if !official_packages.is_empty() && !aur_packages.is_empty() {
+        start_mixed_installation_in_terminal(&terminal, official_packages, aur_packages)?;
+    } else if !official_packages.is_empty() {
+        start_pacman_installation_in_terminal(&terminal, official_packages)?;
+    } else if !aur_packages.is_empty() {
+        start_aur_installation_in_terminal(&terminal, aur_packages)?;
+    }
 
     return Ok(());
 }

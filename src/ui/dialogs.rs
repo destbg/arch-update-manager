@@ -23,7 +23,7 @@ pub fn create_progress_dialog(parent: &Window, title: &str, message: &str) -> Di
         .transient_for(parent)
         .modal(true)
         .message_type(MessageType::Info)
-        .buttons(ButtonsType::Close)
+        .buttons(ButtonsType::Cancel)
         .text(title)
         .secondary_text(message)
         .build();

@@ -1,18 +1,20 @@
 use crate::helpers::package_updates::get_package_updates;
+use crate::helpers::settings::load_settings;
 use crate::models::package_object::PackageUpdateObject;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::info_panel::create_info_panel;
 use crate::ui::loading::create_loading_page;
 use crate::ui::no_updates::create_no_updates_page;
 use crate::ui::package_list::{create_package_list, update_statusbar};
+use crate::ui::settings_dialog::show_settings_dialog;
 use crate::ui::terminal_page::create_terminal_page;
 use crate::ui::toolbar::create_toolbar;
 use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
 use gtk4::{
-    Application, ApplicationWindow, Box as GtkBox, ColumnView, Orientation, Paned, ScrolledWindow,
-    Separator, SingleSelection, Stack, Statusbar,
+    Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, HeaderBar, Orientation,
+    Paned, ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
 };
 
 pub fn build_ui(app: &Application) {
@@ -23,6 +25,21 @@ pub fn build_ui(app: &Application) {
         .default_width(900)
         .default_height(600)
         .build();
+
+    let header_bar = HeaderBar::new();
+    header_bar.set_title_widget(Some(&gtk4::Label::new(Some("Arch Update Manager"))));
+
+    let settings_button = Button::from_icon_name("preferences-system-symbolic");
+    settings_button.set_tooltip_text(Some("Settings"));
+
+    let window_clone = window.clone();
+    settings_button.connect_clicked(move |_| {
+        let settings = load_settings();
+        show_settings_dialog(&window_clone, &settings);
+    });
+
+    header_bar.pack_end(&settings_button);
+    window.set_titlebar(Some(&header_bar));
 
     let main_box = GtkBox::new(Orientation::Vertical, 0);
 
@@ -49,23 +66,19 @@ pub fn build_ui(app: &Application) {
 
     window.present();
 
-    glib::idle_add_local_once(clone!(
-        #[weak]
-        stack,
-        #[weak]
-        content_box,
-        #[weak]
-        window,
-        move || {
-            load_packages(stack, content_box, window);
-        }
-    ));
+    let stack_clone = stack.clone();
+    let content_box_clone = content_box.clone();
+    let window_clone2 = window.clone();
+    glib::idle_add_local_once(move || {
+        load_packages(stack_clone, content_box_clone, window_clone2);
+    });
 }
 
 fn create_main_content() -> GtkBox {
     let content_box = GtkBox::new(Orientation::Vertical, 0);
 
-    let (toolbar_container, _timeshift_checkbox) = create_toolbar();
+    let toolbar_container = create_toolbar();
+
     content_box.append(&toolbar_container);
 
     let separator = Separator::new(Orientation::Horizontal);
@@ -102,7 +115,7 @@ fn create_main_content() -> GtkBox {
             }
         ));
     }
-    paned.set_position(380);
+    paned.set_position(410);
 
     content_box.append(&paned);
 

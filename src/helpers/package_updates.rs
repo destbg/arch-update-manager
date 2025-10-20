@@ -3,6 +3,8 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::process::Command;
 
+use crate::helpers::aur::get_aur_updates;
+use crate::helpers::settings::load_settings;
 use crate::models::package_info::PackageInfo;
 use crate::models::package_update::PackageUpdate;
 use crate::models::update_error::UpdateError;
@@ -50,22 +52,17 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
 
-        if stderr.contains("no packages to upgrade")
-            || stderr.trim().is_empty() && stdout.trim().is_empty()
-        {
-            return Ok(Vec::new());
+        if !stderr.trim().is_empty() {
+            return Err(UpdateError::CommandFailed(format!(
+                "pacman -Qu failed: {}",
+                if !stderr.is_empty() {
+                    &stderr
+                } else {
+                    "Exit code 1 with no output"
+                }
+            )));
         }
-
-        return Err(UpdateError::CommandFailed(format!(
-            "pacman -Qu failed: {}",
-            if !stderr.is_empty() {
-                &stderr
-            } else {
-                "Exit code 1 with no output"
-            }
-        )));
     }
 
     let update_list = String::from_utf8_lossy(&output.stdout);
@@ -89,47 +86,59 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
         }
     }
 
-    if package_updates.is_empty() {
-        return Ok(Vec::new());
+    let mut updates = Vec::new();
+
+    if !package_updates.is_empty() {
+        let package_names: Vec<&str> = package_updates
+            .iter()
+            .map(|(name, _, _)| name.as_str())
+            .collect();
+        let (package_info_map, repo_sizes_map) = get_batch_repository_info(&package_names)?;
+        let installed_sizes_map = get_batch_installed_sizes(&package_names)?;
+
+        for (package_name, current_version, new_version) in package_updates {
+            let (description, repository) = if let Some(info) = package_info_map.get(&package_name)
+            {
+                (info.description.clone(), info.repository.clone())
+            } else {
+                (
+                    "No description available".to_string(),
+                    "Unknown".to_string(),
+                )
+            };
+
+            let current_size = installed_sizes_map
+                .get(&package_name)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string());
+            let new_size = repo_sizes_map
+                .get(&package_name)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string());
+            let size = calculate_size_difference(&current_size, &new_size);
+
+            updates.push(PackageUpdate {
+                name: package_name,
+                new_version,
+                current_version,
+                description,
+                repository,
+                selected: true,
+                size,
+            });
+        }
     }
 
-    let package_names: Vec<&str> = package_updates
-        .iter()
-        .map(|(name, _, _)| name.as_str())
-        .collect();
-    let (package_info_map, repo_sizes_map) = get_batch_repository_info(&package_names)?;
-    let installed_sizes_map = get_batch_installed_sizes(&package_names)?;
-
-    let mut updates = Vec::new();
-    for (package_name, current_version, new_version) in package_updates {
-        let (description, repository) = if let Some(info) = package_info_map.get(&package_name) {
-            (info.description.clone(), info.repository.clone())
-        } else {
-            (
-                "No description available".to_string(),
-                "Unknown".to_string(),
-            )
-        };
-
-        let current_size = installed_sizes_map
-            .get(&package_name)
-            .cloned()
-            .unwrap_or_else(|| "Unknown".to_string());
-        let new_size = repo_sizes_map
-            .get(&package_name)
-            .cloned()
-            .unwrap_or_else(|| "Unknown".to_string());
-        let size = calculate_size_difference(&current_size, &new_size);
-
-        updates.push(PackageUpdate {
-            name: package_name,
-            new_version,
-            current_version,
-            description,
-            repository,
-            selected: true,
-            size,
-        });
+    let settings = load_settings();
+    if settings.enable_aur_support {
+        match get_aur_updates() {
+            Ok(mut aur_updates) => {
+                updates.append(&mut aur_updates);
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to get AUR updates: {}", e);
+            }
+        }
     }
 
     return Ok(updates);
