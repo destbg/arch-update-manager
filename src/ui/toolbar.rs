@@ -3,7 +3,7 @@ use crate::helpers::aur::install_aur_packages;
 use crate::helpers::get_navigation_stack::get_navigation_stack;
 use crate::helpers::settings::load_settings;
 use crate::helpers::terminal::spawn_terminal;
-use crate::helpers::timeshift::{create_timeshift_snapshot, delete_old_timeshift_snapshot};
+use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_snapshot};
 use crate::models::package_object::PackageUpdateObject;
 use crate::ui::dialogs::{create_progress_dialog, show_error_dialog};
 use crate::ui::package_list::update_statusbar;
@@ -250,9 +250,10 @@ fn execute_timeshift_operations_async(
     let (tx, rx) = mpsc::channel();
     let official_packages_clone = official_packages.clone();
     let aur_packages_clone = aur_packages.clone();
+    let settings = load_settings();
 
     thread::spawn(move || match create_timeshift_snapshot(TIMESHIFT_COMMENT) {
-        Ok(newest) => match delete_old_timeshift_snapshot(TIMESHIFT_COMMENT, &newest) {
+        Ok(newest) => match cleanup_timeshift_snapshots(TIMESHIFT_COMMENT, &settings, &newest) {
             Ok(()) => {
                 let _ = tx.send(("success", "Package installation starting".to_string()));
             }

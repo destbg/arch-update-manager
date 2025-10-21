@@ -1,6 +1,11 @@
 use anyhow::{Context, Result, anyhow};
+use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use regex::Regex;
 use std::process::Command;
+
+use crate::models::{
+    app_settings::AppSettings, snapshot_retention_period::SnapshotRetentionPeriod,
+};
 
 pub fn create_timeshift_snapshot(comment: &str) -> Result<String> {
     let status = Command::new("timeshift")
@@ -23,7 +28,11 @@ pub fn create_timeshift_snapshot(comment: &str) -> Result<String> {
     return Ok(candidates.last().unwrap().0.clone());
 }
 
-pub fn delete_old_timeshift_snapshot(comment: &str, keep_snapshot: &str) -> Result<()> {
+pub fn cleanup_timeshift_snapshots(
+    comment: &str,
+    settings: &AppSettings,
+    keep_snapshot: &str,
+) -> Result<()> {
     let mut snaps = list_timeshift_snapshots_with_comments()?;
     for (n, c) in snaps.iter_mut() {
         *n = n.trim().to_string();
@@ -38,26 +47,83 @@ pub fn delete_old_timeshift_snapshot(comment: &str, keep_snapshot: &str) -> Resu
         .filter(|(_, c)| c.as_deref() == Some(comment))
         .collect();
 
-    if same_comment.len() <= 1 {
-        println!("No previous snapshot with comment \"{comment}\" to delete.");
+    if same_comment.is_empty() {
         return Ok(());
     }
 
-    same_comment.truncate(same_comment.len() - 1);
-    for (name, _) in same_comment {
-        if name == keep_snapshot {
-            continue;
-        }
-        let status = Command::new("timeshift")
-            .args(["--delete", "--snapshot", &name, "--yes"])
-            .status()?;
-        if status.success() {
-            println!("Deleted snapshot {name}");
-        } else {
-            return Err(anyhow!("failed to delete snapshot {name}"));
+    let now = Local::now();
+    let cutoff_time = match settings.snapshot_retention_period {
+        SnapshotRetentionPeriod::Forever => None,
+        SnapshotRetentionPeriod::Day => Some(now - Duration::days(1)),
+        SnapshotRetentionPeriod::Week => Some(now - Duration::weeks(1)),
+        SnapshotRetentionPeriod::Month => Some(now - Duration::days(30)),
+        SnapshotRetentionPeriod::Year => Some(now - Duration::days(365)),
+    };
+
+    if let Some(cutoff) = cutoff_time {
+        same_comment.retain(|(name, _)| {
+            if let Ok(snapshot_time) = parse_snapshot_timestamp(name) {
+                snapshot_time >= cutoff
+            } else {
+                true // Keep snapshots we can't parse
+            }
+        });
+    }
+
+    if same_comment.len() > settings.snapshot_retention_count as usize {
+        let keep_count = settings.snapshot_retention_count as usize;
+        let to_delete = same_comment.len() - keep_count;
+        let snapshots_to_delete: Vec<_> = same_comment.drain(0..to_delete).collect();
+
+        for (name, _) in snapshots_to_delete {
+            if name == keep_snapshot {
+                continue;
+            }
+            let status = Command::new("timeshift")
+                .args(["--delete", "--snapshot", &name, "--yes"])
+                .status()?;
+            if status.success() {
+                println!("Deleted snapshot {name}");
+            } else {
+                return Err(anyhow!("failed to delete snapshot {name}"));
+            }
         }
     }
+
     return Ok(());
+}
+
+fn parse_snapshot_timestamp(snapshot_name: &str) -> Result<DateTime<Local>> {
+    // Parse snapshot name format: YYYY-MM-DD_HH-MM-SS
+    let re =
+        Regex::new(r"([0-9]{4})-([0-9]{2})-([0-9]{2})_([0-9]{2})-([0-9]{2})-([0-9]{2})").unwrap();
+
+    if let Some(caps) = re.captures(snapshot_name) {
+        let year: i32 = caps[1].parse()?;
+        let month: u32 = caps[2].parse()?;
+        let day: u32 = caps[3].parse()?;
+        let hour: u32 = caps[4].parse()?;
+        let minute: u32 = caps[5].parse()?;
+        let second: u32 = caps[6].parse()?;
+
+        let naive_date = NaiveDate::from_ymd_opt(year, month, day)
+            .ok_or_else(|| anyhow!("Invalid date in snapshot name"))?;
+        let naive_time = NaiveTime::from_hms_opt(hour, minute, second)
+            .ok_or_else(|| anyhow!("Invalid time in snapshot name"))?;
+        let naive_datetime = NaiveDateTime::new(naive_date, naive_time);
+
+        let local_datetime = Local
+            .from_local_datetime(&naive_datetime)
+            .single()
+            .ok_or_else(|| anyhow!("Could not convert to local time"))?;
+
+        return Ok(local_datetime);
+    }
+
+    return Err(anyhow!(
+        "Could not parse snapshot timestamp from name: {}",
+        snapshot_name
+    ));
 }
 
 fn list_timeshift_snapshots_with_comments() -> Result<Vec<(String, Option<String>)>> {

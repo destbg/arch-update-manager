@@ -5,6 +5,7 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::helpers::aur::is_command_available;
 use crate::models::app_settings::AppSettings;
+use crate::models::snapshot_retention_period::SnapshotRetentionPeriod;
 
 static SETTINGS_CACHE: OnceLock<Mutex<AppSettings>> = OnceLock::new();
 
@@ -18,6 +19,8 @@ pub fn load_settings() -> AppSettings {
                     enable_aur_support: false,
                     preferred_aur_helper: None,
                     create_timeshift_snapshot: true,
+                    snapshot_retention_count: 1,
+                    snapshot_retention_period: SnapshotRetentionPeriod::Forever,
                 }
             }
         };
@@ -85,6 +88,8 @@ fn load_from_file() -> Result<AppSettings> {
             enable_aur_support: false,
             preferred_aur_helper: None,
             create_timeshift_snapshot: true,
+            snapshot_retention_count: 1,
+            snapshot_retention_period: SnapshotRetentionPeriod::Forever,
         });
     }
 
