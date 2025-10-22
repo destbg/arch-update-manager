@@ -46,8 +46,11 @@ jobs:
           install -m 700 -d ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-          printf "Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/id_ed25519\n  IdentitiesOnly yes\n" >> ~/.ssh/config
+          ssh-keyscan -H -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          ssh-keyscan -H -4 -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          ssh-keyscan -H -6 -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          printf "Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/id_ed25519\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  UserKnownHostsFile ~/.ssh/known_hosts\n" >> ~/.ssh/config
 
       - name: Clone AUR repo
         run: |
