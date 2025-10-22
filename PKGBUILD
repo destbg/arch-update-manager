@@ -1,6 +1,6 @@
 pkgname=arch-update-manager
 pkgver=1.0.0
-pkgrel=3
+pkgrel=1
 epoch=
 pkgdesc="A Linux Mint inspired GTK4-based update manager for Arch Linux"
 arch=('x86_64')
