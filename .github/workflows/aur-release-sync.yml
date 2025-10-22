@@ -39,8 +39,7 @@ jobs:
         env:
           AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
         run: |
-          sudo -u builder GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" \
-          git clone ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git aur
+          sudo -u builder git clone ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git aur
 
       - name: Copy PKGBUILD into AUR repo
         run: |
