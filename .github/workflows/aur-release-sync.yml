@@ -1,71 +1,79 @@
 name: aur-release-sync
+
 on:
   release:
     types: [published]
 
 jobs:
-  sync:
+  aur-update:
     runs-on: ubuntu-latest
-    container:
-      image: archlinux:base-devel
-
-    env:
-      PKGBASE: arch-update-manager
-
+    container: archlinux:latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Tooling
-        run: pacman -Syu --noconfirm git openssh pacman-contrib sudo
-
-      - name: Create build user
+      - name: Install dependencies
         run: |
-          useradd -m build
-          echo "build ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/build
-          chown -R build:build "$GITHUB_WORKSPACE"
+          pacman -Syu --noconfirm --needed git openssh sudo pacman-contrib base-devel
 
-      - name: Extract version from tag
-        id: ver
+      - name: Create non-root build user
         run: |
-          v="${{ github.event.release.tag_name }}"
-          v="${v#v}"
-          echo "version=$v" >> $GITHUB_OUTPUT
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
 
-      - name: Bump pkgver + pkgrel in project PKGBUILD
+      - name: Setup SSH for AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
-          sed -i -E "s/^pkgver=.*/pkgver=${{ steps.ver.outputs.version }}/" PKGBUILD
+          install -d -m 700 /home/builder/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/id_ed25519
+          chmod 600 /home/builder/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 aur.archlinux.org >> /home/builder/.ssh/known_hosts
+          chown -R builder:builder /home/builder/.ssh
+
+      - name: Derive version from tag
+        run: |
+          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          VER="${TAG#refs/tags/}"; VER="${VER#v}"
+          echo "PKGVER=$VER" >> $GITHUB_ENV
+
+      - name: Clone AUR repository
+        env:
+          AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
+        run: |
+          set -eu
+          REPO="ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git"
+          sudo -u builder git clone "$REPO" aur
+
+      - name: Copy PKGBUILD into AUR repo
+        run: |
+          cp -f PKGBUILD aur/PKGBUILD
+          chown -R builder:builder aur
+
+      - name: Update pkgver and pkgrel
+        working-directory: aur
+        run: |
+          sed -i -E "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
           sed -i -E "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
 
-      - name: Update checksums and .SRCINFO
+      - name: Refresh checksums and .SRCINFO
+        working-directory: aur
         run: |
-          sudo -u build bash -lc 'updpkgsums'
-          sudo -u build bash -lc 'makepkg --printsrcinfo > .SRCINFO'
-
-      - name: Prepare SSH
-        run: |
-          install -m 700 -d ~/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
-          ssh-keyscan -H -4 -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
-          ssh-keyscan -H -6 -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          printf "Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/id_ed25519\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  UserKnownHostsFile ~/.ssh/known_hosts\n" >> ~/.ssh/config
-
-      - name: Clone AUR repo
-        run: |
-          git clone "ssh://aur@aur.archlinux.org/${PKGBASE}.git" aur-repo
-
-      - name: Copy packaging files into AUR repo
-        run: |
-          rsync -a --delete PKGBUILD .SRCINFO 2>/dev/null || true
-          rsync -a --delete PKGBUILD .SRCINFO 2>/dev/null aur-repo/
+          sudo -u builder bash -lc 'updpkgsums'
+          sudo -u builder bash -lc 'makepkg --printsrcinfo > .SRCINFO'
 
       - name: Commit and push to AUR
-        working-directory: aur-repo
+        working-directory: aur
+        env:
+          AUR_GIT_NAME: ${{ secrets.AUR_GIT_NAME }}
+          AUR_GIT_EMAIL: ${{ secrets.AUR_GIT_EMAIL }}
         run: |
-          git config user.name  "${{ secrets.GIT_USER_NAME }}"
-          git config user.email "${{ secrets.GIT_USER_EMAIL }}"
-          git add -A
-          git commit -m "release: ${PKGBASE} ${{ steps.ver.outputs.version }}-1" || echo "no changes"
-          git push origin HEAD:master
+          sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
+          sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
+          sudo -u builder git add PKGBUILD .SRCINFO
+          if ! sudo -u builder git diff --cached --quiet; then
+            sudo -u builder git commit -m "Update to ${PKGVER} (pkgrel=1)"
+            sudo -u builder git push
+          else
+            echo "No changes."
+          fi
