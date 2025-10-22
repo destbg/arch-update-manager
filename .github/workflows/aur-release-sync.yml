@@ -25,11 +25,35 @@ jobs:
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
+          set -eu
           install -d -m 700 /home/builder/.ssh
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/id_ed25519
-          chmod 600 /home/builder/.ssh/id_ed25519
-          ssh-keyscan -t ed25519 aur.archlinux.org >> /home/builder/.ssh/known_hosts
+          if printf '%s' "$AUR_SSH_PRIVATE_KEY" | grep -q 'BEGIN'; then
+            printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/aur_key.tmp
+          else
+            if printf '%s' "$AUR_SSH_PRIVATE_KEY" | base64 -d >/home/builder/.ssh/aur_key.tmp 2>/dev/null; then
+              :
+            else
+              printf '%s' "$AUR_SSH_PRIVATE_KEY" | sed 's/\\n/\n/g' > /home/builder/.ssh/aur_key.tmp
+            fi
+          fi
+          tr -d '\r' < /home/builder/.ssh/aur_key.tmp > /home/builder/.ssh/aur_key
+          rm /home/builder/.ssh/aur_key.tmp
+          chmod 600 /home/builder/.ssh/aur_key
+
+          ssh-keyscan -t ed25519,rsa aur.archlinux.org >> /home/builder/.ssh/known_hosts
+          {
+            echo "Host aur.archlinux.org"
+            echo "  User aur"
+            echo "  IdentitiesOnly yes"
+            echo "  IdentityFile /home/builder/.ssh/aur_key"
+            echo "  PubkeyAcceptedKeyTypes +ssh-ed25519,ssh-rsa"
+          } > /home/builder/.ssh/config
           chown -R builder:builder /home/builder/.ssh
+
+      - name: Test AUR SSH auth
+        run: |
+          set -x
+          sudo -u builder ssh -o BatchMode=yes -T aur@aur.archlinux.org || true
 
       - name: Derive version from tag
         run: |
@@ -41,9 +65,8 @@ jobs:
         env:
           AUR_PACKAGE: ${{ vars.AUR_PACKAGE }}
         run: |
-          set -eu
-          REPO="ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git"
-          sudo -u builder git clone "$REPO" aur
+          sudo -u builder GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" \
+          git clone ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git aur
 
       - name: Copy PKGBUILD into AUR repo
         run: |
