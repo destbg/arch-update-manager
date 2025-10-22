@@ -19,7 +19,9 @@ if [ -d "icons" ]; then
     sudo cp -r icons/* /usr/share/icons/hicolor/
 fi
 
-echo "Updating icon cache..."
-sudo gtk-update-icon-cache /usr/share/icons/hicolor/ || true
+if command -v gtk-update-icon-cache &> /dev/null; then
+    echo "Updating icon cache..."
+    sudo gtk-update-icon-cache /usr/share/icons/hicolor/ || true
+fi
 
 echo "Installation complete!"
