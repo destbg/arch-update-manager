@@ -1,28 +1,16 @@
 pkgname=arch-update-manager
 pkgver=1.0.0
 pkgrel=1
-epoch=
 pkgdesc="A Linux Mint inspired GTK4-based update manager for Arch Linux"
 arch=('x86_64')
 url="https://github.com/destbg/arch-update-manager"
 license=('MIT')
-groups=()
 depends=('gtk4' 'vte4' 'polkit' 'pacman' 'timeshift')
 makedepends=('cargo' 'git')
-checkdepends=()
 optdepends=('paru: AUR helper support'
             'yay: AUR helper support')
-provides=()
-conflicts=()
-replaces=()
-backup=()
-options=()
-install=
-changelog=
 source=("git+$url.git#tag=${pkgver}")
-noextract=()
 sha256sums=('SKIP')
-validpgpkeys=()
 
 prepare() {
 	cd "$pkgname"
