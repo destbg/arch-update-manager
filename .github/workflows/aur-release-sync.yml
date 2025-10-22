@@ -32,7 +32,6 @@ jobs:
 
       - name: Update checksums and .SRCINFO
         run: |
-          updpkgsums
           makepkg --printsrcinfo > .SRCINFO
 
       - name: Prepare SSH
