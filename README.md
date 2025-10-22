@@ -9,16 +9,10 @@ A Linux Mint inspired GTK4-based update manager for Arch Linux.
 - Refresh package list
 - Create timeshift snapshot before updates
 
-## Building
-
-```bash
-cargo build --release
-```
-
 ## Installing
 
 ```bash
-sudo ./install.sh
+makepkg -si
 ```
 
 ## License
