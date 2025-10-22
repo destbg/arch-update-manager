@@ -1,0 +1,62 @@
+name: aur-release-sync
+on:
+  release:
+    types: [published]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+
+    env:
+      PKGBASE: arch-update-manager
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tooling
+        run: pacman -Syu --noconfirm git openssh pacman-contrib
+
+      - name: Extract version from tag
+        id: ver
+        run: |
+          v="${{ github.event.release.tag_name }}"
+          v="${v#v}"
+          echo "version=$v" >> $GITHUB_OUTPUT
+
+      - name: Bump pkgver + pkgrel in project PKGBUILD
+        run: |
+          sed -i -E "s/^pkgver=.*/pkgver=${{ steps.ver.outputs.version }}/" PKGBUILD
+          sed -i -E "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+      - name: Update checksums and .SRCINFO
+        run: |
+          updpkgsums
+          makepkg --printsrcinfo > .SRCINFO
+
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          printf "Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/id_ed25519\n  IdentitiesOnly yes\n" >> ~/.ssh/config
+
+      - name: Clone AUR repo
+        run: |
+          git clone "ssh://aur@aur.archlinux.org/${PKGBASE}.git" aur-repo
+
+      - name: Copy packaging files into AUR repo
+        run: |
+          rsync -a --delete PKGBUILD .SRCINFO 2>/dev/null || true
+          rsync -a --delete PKGBUILD .SRCINFO 2>/dev/null aur-repo/
+
+      - name: Commit and push to AUR
+        working-directory: aur-repo
+        run: |
+          git config user.name  "${{ secrets.GIT_USER_NAME }}"
+          git config user.email "${{ secrets.GIT_USER_EMAIL }}"
+          git add -A
+          git commit -m "release: ${PKGBASE} ${{ steps.ver.outputs.version }}-1" || echo "no changes"
+          git push origin HEAD:master
