@@ -16,7 +16,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Tooling
-        run: pacman -Syu --noconfirm git openssh pacman-contrib
+        run: pacman -Syu --noconfirm git openssh pacman-contrib sudo
+
+      - name: Create build user
+        run: |
+          useradd -m build
+          echo "build ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/build
+          chown -R build:build "$GITHUB_WORKSPACE"
 
       - name: Extract version from tag
         id: ver
@@ -32,7 +38,8 @@ jobs:
 
       - name: Update checksums and .SRCINFO
         run: |
-          makepkg --printsrcinfo > .SRCINFO
+          sudo -u build bash -lc 'updpkgsums'
+          sudo -u build bash -lc 'makepkg --printsrcinfo > .SRCINFO'
 
       - name: Prepare SSH
         run: |
