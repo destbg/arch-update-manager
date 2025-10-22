@@ -8,7 +8,6 @@ A Linux Mint inspired GTK4-based update manager for Arch Linux.
 - Select/deselect packages for installation
 - Refresh package list
 - Create timeshift snapshot before updates
-- Cross-desktop compatibility
 
 ## Building
 
