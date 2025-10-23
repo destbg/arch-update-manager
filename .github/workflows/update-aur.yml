@@ -21,6 +21,7 @@ jobs:
         run: |
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
 
       - name: Setup SSH for AUR
         env:
@@ -51,7 +52,9 @@ jobs:
         run: |
           set -eu
           REPO="ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git"
-          sudo -u builder git clone "$REPO" aur
+          sudo -u niki GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" \
+            git clone ssh://aur@aur.archlinux.org/arch-update-manager.git aur
+
 
       - name: Copy PKGBUILD into AUR repo
         run: |
