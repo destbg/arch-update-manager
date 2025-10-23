@@ -52,9 +52,8 @@ jobs:
         run: |
           set -eu
           REPO="ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git"
-          sudo -u niki GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" \
+          sudo -u builder GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" \
             git clone ssh://aur@aur.archlinux.org/arch-update-manager.git aur
-
 
       - name: Copy PKGBUILD into AUR repo
         run: |
