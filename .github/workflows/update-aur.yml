@@ -1,0 +1,87 @@
+name: Update AUR PKGBUILD
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  aur-update:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    env:
+      AUR_PACKAGE: arch-update-manager
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed git openssh sudo pacman-contrib base-devel
+
+      - name: Create non-root build user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
+
+      - name: Setup SSH for AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 /home/builder/.ssh
+
+          printf '%s' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/aur_key
+          chmod 600 /home/builder/.ssh/aur_key
+
+          ssh-keyscan -t ed25519,rsa aur.archlinux.org >> /home/builder/.ssh/known_hosts
+          {
+            echo "Host aur.archlinux.org"
+            echo "  User aur"
+            echo "  IdentitiesOnly yes"
+            echo "  IdentityFile /home/builder/.ssh/aur_key"
+            echo "  PubkeyAcceptedKeyTypes +ssh-ed25519,ssh-rsa"
+          } > /home/builder/.ssh/config
+          chown -R builder:builder /home/builder/.ssh
+
+      - name: Derive version from tag
+        run: |
+          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          VER="${TAG#refs/tags/}"; VER="${VER#v}"
+          echo "PKGVER=$VER" >> $GITHUB_ENV
+
+      - name: Clone AUR repository
+        run: |
+          set -eu
+          REPO="ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git"
+          sudo -u builder git clone "$REPO" aur
+
+      - name: Copy PKGBUILD into AUR repo
+        run: |
+          cp -f PKGBUILD aur/PKGBUILD
+          chown -R builder:builder aur
+
+      - name: Update pkgver and pkgrel
+        working-directory: aur
+        run: |
+          sed -i -E "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
+          sed -i -E "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+      - name: Refresh checksums and .SRCINFO (non-root)
+        working-directory: aur
+        run: |
+          sudo -u builder bash -lc 'updpkgsums'
+          sudo -u builder bash -lc 'makepkg --printsrcinfo > .SRCINFO'
+
+      - name: Commit and push to AUR
+        working-directory: aur
+        env:
+          AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
+          AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
+        run: |
+          sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
+          sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
+          sudo -u builder git add PKGBUILD .SRCINFO
+          if ! sudo -u builder git diff --cached --quiet; then
+            sudo -u builder git commit -m "Update to ${PKGVER} (pkgrel=1)"
+            sudo -u builder git push
+          else
+            echo "No changes."
+          fi
