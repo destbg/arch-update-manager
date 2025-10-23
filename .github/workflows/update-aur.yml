@@ -43,10 +43,13 @@ jobs:
           tar -C dist -czf "dist/${BINARY_NAME}-${PKGVER}-x86_64.tar.gz" "${BINARY_NAME}"
 
       - name: Upload binary to release
+        working-directory: ${{ github.workspace }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          gh release upload "$GHTAG" "dist/${BINARY_NAME}-${PKGVER}-x86_64.tar.gz" --clobber
+          gh release upload "$GHTAG" "dist/${BINARY_NAME}-${PKGVER}-x86_64.tar.gz" \
+            --clobber --repo "$GH_REPO"
 
       - name: Setup SSH for AUR
         env:
