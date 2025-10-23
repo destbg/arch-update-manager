@@ -1,27 +1,52 @@
-name: Update AUR PKGBUILD
+name: Build and Update AUR
 
 on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
-  aur-update:
+  build-and-update-aur:
     runs-on: ubuntu-latest
     container: archlinux:latest
     env:
-      AUR_PACKAGE: arch-update-manager
+      BINARY_NAME: arch-update-manager
+      AUR_SRC: arch-update-manager
+      AUR_BIN: arch-update-manager-bin
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm --needed git openssh sudo pacman-contrib base-devel
+          pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib pkgconf rust gtk4 glib2 vte4 github-cli
 
       - name: Create non-root build user
         run: |
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Derive version from tag
+        run: |
+          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          VER="${TAG#refs/tags/}"; VER="${VER#v}"
+          echo "PKGVER=$VER" >> $GITHUB_ENV
+          echo "GHTAG=$TAG" >> $GITHUB_ENV
+
+      - name: Build release binary
+        run: |
+          sudo -u builder bash -lc 'cargo build --release --locked'
+          install -d dist
+          cp "target/release/${BINARY_NAME}" "dist/${BINARY_NAME}"
+          tar -C dist -czf "dist/${BINARY_NAME}-${PKGVER}-x86_64.tar.gz" "${BINARY_NAME}"
+
+      - name: Upload binary to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GHTAG" "dist/${BINARY_NAME}-${PKGVER}-x86_64.tar.gz" --clobber
 
       - name: Setup SSH for AUR
         env:
@@ -50,38 +75,60 @@ jobs:
           } > /home/builder/.ssh/config
           chown -R builder:builder /home/builder/.ssh
 
-      - name: Derive version from tag
-        run: |
-          TAG="${{ github.event.release.tag_name || github.ref_name }}"
-          VER="${TAG#refs/tags/}"; VER="${VER#v}"
-          echo "PKGVER=$VER" >> $GITHUB_ENV
-
       - name: Clone AUR repository
         run: |
           set -eu
-          REPO="ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git"
-          sudo -u builder GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" \
-            git clone ssh://aur@aur.archlinux.org/arch-update-manager.git aur
+          REPO="ssh://aur@aur.archlinux.org/${AUR_SRC}.git"
+          sudo -u builder GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" git clone $REPO aur
+
+          REPO_BIN="ssh://aur@aur.archlinux.org/${AUR_BIN}.git"
+          sudo -u builder GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" git clone $REPO_BIN aur-bin
 
       - name: Copy PKGBUILD into AUR repo
         run: |
           cp -f PKGBUILD aur/PKGBUILD
           chown -R builder:builder aur
 
+          cp -f PKGBUILD.bin aur-bin/PKGBUILD
+          chown -R builder:builder aur-bin
+
       - name: Update pkgver and pkgrel
-        working-directory: aur
         run: |
-          sed -i -E "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
-          sed -i -E "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i -E "s/^pkgver=.*/pkgver=${PKGVER}/" aur/PKGBUILD
+          sed -i -E "s/^pkgrel=.*/pkgrel=1/" aur/PKGBUILD
+
+          sed -i -E "s/^pkgver=.*/pkgver=${PKGVER}/" aur-bin/PKGBUILD
+          sed -i -E "s/^pkgrel=.*/pkgrel=1/" aur-bin/PKGBUILD
 
       - name: Refresh checksums and .SRCINFO (non-root)
-        working-directory: aur
         run: |
+          cd aur
+          sudo -u builder bash -lc 'updpkgsums'
+          sudo -u builder bash -lc 'makepkg --printsrcinfo > .SRCINFO'
+          cd ..
+
+          cd aur-bin
           sudo -u builder bash -lc 'updpkgsums'
           sudo -u builder bash -lc 'makepkg --printsrcinfo > .SRCINFO'
 
       - name: Commit and push to AUR
         working-directory: aur
+        env:
+          AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
+          AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
+        run: |
+          sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
+          sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
+          sudo -u builder git add PKGBUILD .SRCINFO
+          if ! sudo -u builder git diff --cached --quiet; then
+            sudo -u builder git commit -m "Update to ${PKGVER} (pkgrel=1)"
+            sudo -u builder git push
+          else
+            echo "No changes."
+          fi
+
+      - name: Commit and push to AUR (bin)
+        working-directory: aur-bin
         env:
           AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
           AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}

@@ -6,6 +6,8 @@ arch=('x86_64')
 url="https://github.com/destbg/arch-update-manager"
 license=('MIT')
 depends=('gtk4' 'vte4' 'polkit' 'pacman' 'timeshift')
+provides=('arch-update-manager')
+conflicts=('arch-update-manager')
 makedepends=('cargo' 'git')
 optdepends=('paru: AUR helper support'
             'yay: AUR helper support')
@@ -23,12 +25,6 @@ build() {
 	export RUSTUP_TOOLCHAIN=stable
 	export CARGO_TARGET_DIR=target
 	cargo build --frozen --release --all-features
-}
-
-check() {
-	cd "$pkgname"
-	export RUSTUP_TOOLCHAIN=stable
-    cargo check --frozen --all-features
 }
 
 package() {
