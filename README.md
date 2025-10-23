@@ -14,6 +14,10 @@ A Linux Mint inspired GTK4-based update manager for Arch Linux.
 ```bash
 makepkg -si
 ```
+Or using the AUR
+```bash
+yay arch-update-manager
+```
 
 ## License
 
