@@ -141,6 +141,20 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
         }
     }
 
+    updates.sort_by(|a, b| {
+        let a_is_core = a.repository.contains("core");
+        let b_is_core = b.repository.contains("core");
+
+        return match (a_is_core, b_is_core) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => match a.repository.cmp(&b.repository) {
+                std::cmp::Ordering::Equal => a.name.cmp(&b.name),
+                other => other,
+            },
+        };
+    });
+
     return Ok(updates);
 }
 
