@@ -29,7 +29,15 @@ jobs:
         run: |
           install -d -m 700 /home/builder/.ssh
 
-          printf '%s' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/aur_key
+          if printf '%s' "$AUR_SSH_PRIVATE_KEY" | grep -q 'BEGIN'; then
+            printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/aur_key
+          elif printf '%s' "$AUR_SSH_PRIVATE_KEY" | base64 -d >/home/builder/.ssh/aur_key 2>/dev/null; then
+            :
+          else
+            printf '%s' "$AUR_SSH_PRIVATE_KEY" | sed 's/\\n/\n/g' > /home/builder/.ssh/aur_key
+          fi
+          tr -d '\r' < /home/builder/.ssh/aur_key > /home/builder/.ssh/aur_key.clean
+          mv /home/builder/.ssh/aur_key.clean /home/builder/.ssh/aur_key
           chmod 600 /home/builder/.ssh/aur_key
 
           ssh-keyscan -t ed25519,rsa aur.archlinux.org >> /home/builder/.ssh/known_hosts
