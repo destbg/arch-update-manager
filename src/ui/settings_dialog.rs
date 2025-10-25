@@ -1,4 +1,5 @@
 use gtk4::{ApplicationWindow, prelude::*};
+use std::rc::Rc;
 
 use crate::{
     helpers::settings::{get_available_aur_helpers, load_settings, save_settings},
@@ -12,10 +13,6 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
         .modal(true)
         .default_width(440)
         .build();
-
-    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
-    let ok_button = dialog.add_button("Save", gtk4::ResponseType::Ok);
-    ok_button.add_css_class("suggested-action");
 
     let content_area = dialog.content_area();
     content_area.set_spacing(0);
@@ -32,19 +29,19 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
 
     content_area.append(&main_container);
 
-    let aur_enable_check_clone = aur_enable_check.clone();
-    let aur_combo_clone = aur_combo.clone();
-    let timeshift_check_clone = timeshift_check.clone();
-    let retention_count_spin_clone = retention_count_spin.clone();
-    let retention_period_combo_clone = retention_period_combo.clone();
+    let save_all = {
+        let aur_enable_check = aur_enable_check.clone();
+        let aur_combo = aur_combo.clone();
+        let timeshift_check = timeshift_check.clone();
+        let retention_count_spin = retention_count_spin.clone();
+        let retention_period_combo = retention_period_combo.clone();
 
-    dialog.connect_response(move |dialog, response| {
-        if response == gtk4::ResponseType::Ok {
+        Rc::new(move || {
             let mut new_settings = load_settings();
 
-            new_settings.enable_aur_support = aur_enable_check_clone.is_active();
+            new_settings.enable_aur_support = aur_enable_check.is_active();
 
-            if let Some(active_id) = aur_combo_clone.active_id() {
+            if let Some(active_id) = aur_combo.active_id() {
                 new_settings.preferred_aur_helper = if active_id == "auto" {
                     None
                 } else {
@@ -52,10 +49,10 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
                 };
             }
 
-            new_settings.create_timeshift_snapshot = timeshift_check_clone.is_active();
-            new_settings.snapshot_retention_count = retention_count_spin_clone.value() as u32;
+            new_settings.create_timeshift_snapshot = timeshift_check.is_active();
+            new_settings.snapshot_retention_count = retention_count_spin.value() as u32;
 
-            if let Some(active_id) = retention_period_combo_clone.active_id() {
+            if let Some(active_id) = retention_period_combo.active_id() {
                 new_settings.snapshot_retention_period = match active_id.as_str() {
                     "day" => SnapshotRetentionPeriod::Day,
                     "week" => SnapshotRetentionPeriod::Week,
@@ -68,9 +65,48 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
             if let Err(e) = save_settings(&new_settings) {
                 eprintln!("Failed to save settings: {}", e);
             }
+        })
+    };
+
+    let aur_combo_weak = aur_combo.clone();
+    let save_all_clone = save_all.clone();
+    aur_enable_check.connect_toggled(move |check| {
+        aur_combo_weak.set_sensitive(check.is_active());
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    aur_combo.connect_changed(move |_| {
+        save_all_clone();
+    });
+
+    let retention_count_spin_weak = retention_count_spin.clone();
+    let retention_period_combo_weak = retention_period_combo.clone();
+    let save_all_clone = save_all.clone();
+    timeshift_check.connect_toggled(move |check| {
+        let is_active = check.is_active();
+
+        if let Some(parent) = retention_count_spin_weak.parent() {
+            if let Ok(box_widget) = parent.downcast::<gtk4::Box>() {
+                box_widget.set_sensitive(is_active);
+            }
+        }
+        if let Some(parent) = retention_period_combo_weak.parent() {
+            if let Ok(box_widget) = parent.downcast::<gtk4::Box>() {
+                box_widget.set_sensitive(is_active);
+            }
         }
 
-        dialog.close();
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    retention_count_spin.connect_value_changed(move |_| {
+        save_all_clone();
+    });
+
+    retention_period_combo.connect_changed(move |_| {
+        save_all();
     });
 
     dialog.present();
@@ -107,11 +143,6 @@ fn create_aur_group(
     }
 
     aur_combo.set_sensitive(settings.enable_aur_support);
-
-    let aur_combo_weak = aur_combo.clone();
-    aur_enable_check.connect_toggled(move |check| {
-        aur_combo_weak.set_sensitive(check.is_active());
-    });
 
     aur_section.append(&aur_combo);
     main_container.append(&aur_section);
@@ -191,19 +222,9 @@ fn create_timeshift_group(
     deletion_info_label.add_css_class("caption");
     timeshift_section.append(&deletion_info_label);
 
-    let retention_count_box_weak = retention_count_box.clone();
-    let retention_period_box_weak = retention_period_box.clone();
-    let deletion_info_label_weak = deletion_info_label.clone();
-    retention_count_box.set_sensitive(settings.create_timeshift_snapshot);
-    retention_period_box.set_sensitive(settings.create_timeshift_snapshot);
-    deletion_info_label.set_sensitive(settings.create_timeshift_snapshot);
-
-    timeshift_check.connect_toggled(move |check| {
-        let is_active = check.is_active();
-        retention_count_box_weak.set_sensitive(is_active);
-        retention_period_box_weak.set_sensitive(is_active);
-        deletion_info_label_weak.set_sensitive(is_active);
-    });
+    let is_active = settings.create_timeshift_snapshot;
+    retention_count_box.set_sensitive(is_active);
+    retention_period_box.set_sensitive(is_active);
 
     main_container.append(&timeshift_section);
 
