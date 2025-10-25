@@ -1,4 +1,4 @@
-use gtk4::prelude::*;
+use gtk4::{ApplicationWindow, ResponseType, prelude::*};
 use gtk4::{Box as GtkBox, ButtonsType, Dialog, MessageDialog, MessageType, Spinner, Window};
 
 pub fn show_error_dialog(parent: &Window, title: &str, message: &str) {
@@ -45,4 +45,25 @@ pub fn create_progress_dialog(parent: &Window, title: &str, message: &str) -> Di
     dialog.show();
 
     return dialog.upcast::<Dialog>();
+}
+
+pub fn show_confirm_dialog(
+    parent: &ApplicationWindow,
+    title: &str,
+    message: &str,
+) -> MessageDialog {
+    let dialog = MessageDialog::builder()
+        .transient_for(parent)
+        .modal(true)
+        .message_type(MessageType::Question)
+        .text(title)
+        .secondary_text(message)
+        .build();
+
+    dialog.add_button("Cancel", ResponseType::Cancel);
+    dialog.add_button("Install", ResponseType::Accept);
+
+    dialog.show();
+
+    return dialog;
 }

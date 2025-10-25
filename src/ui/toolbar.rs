@@ -5,7 +5,7 @@ use crate::helpers::settings::load_settings;
 use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_snapshot};
 use crate::models::package_object::PackageUpdateObject;
-use crate::ui::dialogs::{create_progress_dialog, show_error_dialog};
+use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
 use crate::ui::package_list::update_statusbar;
 use gio::ListStore;
 use glib::clone;
@@ -95,9 +95,30 @@ pub fn create_toolbar() -> GtkBox {
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
                     let settings = load_settings();
                     let create_snapshot = settings.create_timeshift_snapshot;
-                    if let Err(e) = install_selected_packages_ui(&store, &window, create_snapshot) {
-                        eprintln!("Failed to install packages: {}", e);
-                    }
+
+                    let confirm_dialog = show_confirm_dialog(
+                        &window,
+                        "Confirm Installation",
+                        &format!(
+                            "Install selected updates?{}",
+                            if create_snapshot {
+                                "\nA Timeshift snapshot will be created."
+                            } else {
+                                ""
+                            }
+                        ),
+                    );
+
+                    confirm_dialog.connect_response(move |dialog, response| {
+                        if response == gtk4::ResponseType::Accept {
+                            if let Err(e) =
+                                install_selected_packages_ui(&store, &window, create_snapshot)
+                            {
+                                eprintln!("Failed to install packages: {}", e);
+                            }
+                        }
+                        dialog.close();
+                    });
                 }
             }
         }
@@ -338,7 +359,12 @@ fn start_pacman_installation_in_terminal(
     terminal: &vte4::Terminal,
     packages: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut command_args = vec!["sudo".to_string(), "pacman".to_string(), "-S".to_string()];
+    let mut command_args = vec![
+        "sudo".to_string(),
+        "pacman".to_string(),
+        "--noconfirm".to_string(),
+        "-S".to_string(),
+    ];
     command_args.extend(packages);
 
     let args: Vec<&str> = command_args.iter().map(|s| s.as_str()).collect();
