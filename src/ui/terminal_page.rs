@@ -33,6 +33,7 @@ pub fn create_terminal_page() -> GtkBox {
     let terminal = Terminal::new();
     terminal.set_vexpand(true);
     terminal.set_hexpand(true);
+    terminal.set_scrollback_lines(-1);
 
     terminal.set_font_scale(1.0);
     terminal.set_audible_bell(false);

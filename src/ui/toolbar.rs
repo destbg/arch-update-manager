@@ -14,6 +14,7 @@ use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, ColumnView, Frame, Image, Orientation, Paned,
     ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
 };
+use shlex::try_quote as quote;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -355,49 +356,46 @@ fn find_terminal_in_box(container: &GtkBox) -> Option<Frame> {
     return None;
 }
 
-fn start_pacman_installation_in_terminal(
-    terminal: &vte4::Terminal,
-    packages: Vec<String>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut command_args = vec![
-        "sudo".to_string(),
-        "pacman".to_string(),
-        "--noconfirm".to_string(),
-        "-S".to_string(),
-    ];
-    command_args.extend(packages);
-
-    let args: Vec<&str> = command_args.iter().map(|s| s.as_str()).collect();
-
-    spawn_terminal(terminal, args);
-
-    return Ok(());
-}
-
-fn start_aur_installation_in_terminal(
-    terminal: &vte4::Terminal,
-    packages: Vec<String>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let command_parts = install_aur_packages(packages)?;
-    let args: Vec<&str> = command_parts.iter().map(|s| s.as_str()).collect();
-
-    spawn_terminal(terminal, args);
-
-    return Ok(());
-}
-
-fn start_mixed_installation_in_terminal(
+fn start_installation_in_terminal(
     terminal: &vte4::Terminal,
     official_packages: Vec<String>,
     aur_packages: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut all_packages = official_packages;
-    all_packages.extend(aur_packages);
+    let pacman_cmd = if !official_packages.is_empty() {
+        let pkgs = official_packages
+            .clone()
+            .drain(..)
+            .map(|p| quote(&p).map(|cow| cow.into_owned()))
+            .collect::<Result<Vec<String>, _>>()?
+            .join(" ");
+        Some(format!("sudo pacman --noconfirm -S {pkgs}"))
+    } else {
+        None
+    };
 
-    let command_parts = install_aur_packages(all_packages)?;
-    let args: Vec<&str> = command_parts.iter().map(|s| s.as_str()).collect();
+    let aur_cmd = if !aur_packages.is_empty() {
+        let parts = install_aur_packages(aur_packages)?;
+        let line = parts
+            .iter()
+            .map(|p| quote(&p))
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .map(|cow| cow.as_ref())
+            .collect::<Vec<_>>()
+            .join(" ");
+        Some(line)
+    } else {
+        None
+    };
 
-    spawn_terminal(terminal, args);
+    let joined = match (pacman_cmd, aur_cmd) {
+        (Some(p), Some(a)) => format!("{p} && {a}"),
+        (Some(p), None) => p,
+        (None, Some(a)) => a,
+        (None, None) => return Ok(()),
+    };
+
+    spawn_terminal(terminal, vec!["bash", "-lc", &joined]);
 
     return Ok(());
 }
@@ -425,13 +423,7 @@ fn navigate_to_terminal_and_install(
 
     stack.set_visible_child_name("terminal");
 
-    if !official_packages.is_empty() && !aur_packages.is_empty() {
-        start_mixed_installation_in_terminal(&terminal, official_packages, aur_packages)?;
-    } else if !official_packages.is_empty() {
-        start_pacman_installation_in_terminal(&terminal, official_packages)?;
-    } else if !aur_packages.is_empty() {
-        start_aur_installation_in_terminal(&terminal, aur_packages)?;
-    }
+    start_installation_in_terminal(&terminal, official_packages, aur_packages)?;
 
     return Ok(());
 }

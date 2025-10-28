@@ -48,11 +48,4 @@ impl AurManagers {
             AurManagers::PamacCli => vec!["install"],
         };
     }
-
-    pub fn supports_noconfirm(&self) -> bool {
-        return match self {
-            AurManagers::PamacCli => false,
-            _ => true,
-        };
-    }
 }

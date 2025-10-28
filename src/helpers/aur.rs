@@ -144,10 +144,6 @@ pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
         args.push(package);
     }
 
-    if helper.supports_noconfirm() {
-        args.push("--noconfirm");
-    }
-
     let original_user = get_original_user();
 
     if let Some(user) = original_user {
