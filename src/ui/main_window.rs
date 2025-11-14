@@ -2,6 +2,7 @@ use crate::helpers::package_updates::get_package_updates;
 use crate::helpers::settings::load_settings;
 use crate::models::package_object::PackageUpdateObject;
 use crate::ui::dialogs::show_error_dialog;
+use crate::ui::error_page::{create_error_page, update_error_page_message};
 use crate::ui::info_panel::create_info_panel;
 use crate::ui::loading::create_loading_page;
 use crate::ui::no_updates::create_no_updates_page;
@@ -51,6 +52,9 @@ pub fn build_ui(app: &Application) {
 
     let no_updates_box = create_no_updates_page();
     stack.add_named(&no_updates_box, Some("no-updates"));
+
+    let error_box = create_error_page();
+    stack.add_named(&error_box, Some("error"));
 
     let terminal_box = create_terminal_page();
     stack.add_named(&terminal_box, Some("terminal"));
@@ -187,13 +191,20 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                 stack.set_visible_child_name("content");
             }
             Ok(Err(e)) => {
-                show_error_dialog(
-                    window.upcast_ref::<gtk4::Window>(),
-                    "Error Loading Packages",
-                    &format!("Failed to load package updates: {}", e),
-                );
-                eprintln!("Error loading packages: {}", e);
-                stack.set_visible_child_name("content");
+                if let crate::models::update_error::UpdateError::SyncFailed(ref msg) = e {
+                    if let Some(error_box) = stack.child_by_name("error").and_downcast::<GtkBox>() {
+                        update_error_page_message(&error_box, msg);
+                    }
+                    stack.set_visible_child_name("error");
+                } else {
+                    show_error_dialog(
+                        window.upcast_ref::<gtk4::Window>(),
+                        "Error Loading Packages",
+                        &format!("Failed to load package updates: {}", e),
+                    );
+                    eprintln!("Error loading packages: {}", e);
+                    stack.set_visible_child_name("content");
+                }
             }
             Err(e) => {
                 eprintln!("Error in background thread: {:?}", e);

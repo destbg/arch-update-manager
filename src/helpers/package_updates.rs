@@ -14,6 +14,7 @@ impl std::fmt::Display for UpdateError {
         match self {
             UpdateError::CommandFailed(msg) => write!(f, "Command failed: {}", msg),
             UpdateError::IoError(msg) => write!(f, "IO error: {}", msg),
+            UpdateError::SyncFailed(msg) => write!(f, "Database sync failed: {}", msg),
         }
     }
 }
@@ -42,7 +43,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
 
     if !sync_output.status.success() {
         let stderr = String::from_utf8_lossy(&sync_output.stderr);
-        eprintln!("Warning: Failed to sync databases: {}", stderr);
+        return Err(UpdateError::SyncFailed(stderr.to_string()));
     }
 
     let output = Command::new("pacman")
