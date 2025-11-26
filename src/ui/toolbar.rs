@@ -368,7 +368,7 @@ fn start_installation_in_terminal(
             .map(|p| quote(&p).map(|cow| cow.into_owned()))
             .collect::<Result<Vec<String>, _>>()?
             .join(" ");
-        Some(format!("sudo pacman --noconfirm -S {pkgs}"))
+        Some(format!("sudo pacman -S {pkgs}"))
     } else {
         None
     };
