@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use vte4::{Terminal, TerminalExt};
 
 use crate::helpers::get_navigation_stack::get_navigation_stack;
+use crate::ui::main_window::load_packages;
 
 pub fn create_terminal_page() -> GtkBox {
     let main_box = GtkBox::new(Orientation::Vertical, 12);
@@ -101,5 +102,5 @@ fn refresh_package_list(main_box: &GtkBox) {
     };
 
     stack.set_visible_child_name("loading");
-    crate::ui::main_window::load_packages(stack, content_box, window);
+    load_packages(stack, content_box, window);
 }

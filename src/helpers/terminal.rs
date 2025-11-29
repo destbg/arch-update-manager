@@ -1,15 +1,17 @@
-use vte4::TerminalExtManual;
+use gio::Cancellable;
+use glib::SpawnFlags;
+use vte4::{PtyFlags, Terminal, TerminalExtManual};
 
-pub fn spawn_terminal(terminal: &vte4::Terminal, args: Vec<&str>) {
+pub fn spawn_terminal(terminal: &Terminal, args: Vec<&str>) {
     terminal.spawn_async(
-        vte4::PtyFlags::DEFAULT,   // no special flags
-        None,                      // default working directory
-        &args,                     // command arguments
-        &[],                       // default environment
-        glib::SpawnFlags::DEFAULT, // no special flags
-        || {},                     // child setup function
-        -1,                        // timeout
-        None::<&gio::Cancellable>, // cancellable
+        PtyFlags::DEFAULT,    // no special flags
+        None,                 // default working directory
+        &args,                // command arguments
+        &[],                  // default environment
+        SpawnFlags::DEFAULT,  // no special flags
+        || {},                // child setup function
+        -1,                   // timeout
+        None::<&Cancellable>, // cancellable
         |result| {
             if let Err(e) = result {
                 eprintln!("Failed to spawn terminal: {}", e);

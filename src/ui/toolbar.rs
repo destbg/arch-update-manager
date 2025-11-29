@@ -1,10 +1,12 @@
 use crate::constants::{AUR_NAME, TIMESHIFT_COMMENT};
 use crate::helpers::aur::install_aur_packages;
 use crate::helpers::get_navigation_stack::get_navigation_stack;
+use crate::helpers::pacman_repos::{group_repos_by_base_server, unique_repo_sets};
 use crate::helpers::settings::load_settings;
 use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_snapshot};
 use crate::models::package_object::PackageUpdateObject;
+use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
 use crate::ui::package_list::update_statusbar;
 use gio::ListStore;
@@ -223,9 +225,9 @@ fn install_selected_packages_ui(
             let data = item.data();
             if data.selected {
                 if data.repository == AUR_NAME {
-                    aur_packages.push(data.name);
+                    aur_packages.push(data);
                 } else {
-                    official_packages.push(data.name);
+                    official_packages.push(data);
                 }
             }
         }
@@ -264,8 +266,8 @@ fn install_selected_packages_ui(
 }
 
 fn execute_timeshift_operations_async(
-    official_packages: Vec<String>,
-    aur_packages: Vec<String>,
+    official_packages: Vec<PackageUpdate>,
+    aur_packages: Vec<PackageUpdate>,
     window: ApplicationWindow,
     progress_dialog: gtk4::Dialog,
 ) {
@@ -358,23 +360,49 @@ fn find_terminal_in_box(container: &GtkBox) -> Option<Frame> {
 
 fn start_installation_in_terminal(
     terminal: &vte4::Terminal,
-    official_packages: Vec<String>,
-    aur_packages: Vec<String>,
+    official_packages: Vec<PackageUpdate>,
+    aur_packages: Vec<PackageUpdate>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let by_server = group_repos_by_base_server()?;
+    let repo_sets = unique_repo_sets(&by_server);
+
     let pacman_cmd = if !official_packages.is_empty() {
-        let pkgs = official_packages
-            .clone()
-            .drain(..)
-            .map(|p| quote(&p).map(|cow| cow.into_owned()))
-            .collect::<Result<Vec<String>, _>>()?
-            .join(" ");
-        Some(format!("sudo pacman -S {pkgs}"))
+        let mut parts: Vec<String> = Vec::new();
+        for set in repo_sets {
+            let mut pkgs: Vec<String> = official_packages
+                .iter()
+                .filter(|p| set.contains(&p.repository))
+                .map(|p| p.name.clone())
+                .collect();
+
+            if pkgs.is_empty() {
+                continue;
+            }
+
+            let pkgs_quoted = pkgs
+                .drain(..)
+                .map(|p| quote(&p).map(|cow| cow.into_owned()))
+                .collect::<Result<Vec<String>, _>>()?
+                .join(" ");
+
+            let cmd = format!(
+                r#"expect -c 'log_user 0; spawn sudo pacman -S {pkgs}; log_user 1; expect {{Proceed with installation\? \[Y/n\]}} {{ send -- "y\r" }}; expect eof'; while [ -e /var/lib/pacman/db.lck ]; do sleep 0.2; done"#,
+                pkgs = pkgs_quoted
+            );
+            parts.push(cmd);
+        }
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" && "))
+        }
     } else {
         None
     };
 
     let aur_cmd = if !aur_packages.is_empty() {
-        let parts = install_aur_packages(aur_packages)?;
+        let parts = install_aur_packages(aur_packages.into_iter().map(|p| p.name).collect())?;
         let line = parts
             .iter()
             .map(|p| quote(&p))
@@ -402,8 +430,8 @@ fn start_installation_in_terminal(
 
 fn navigate_to_terminal_and_install(
     window: &ApplicationWindow,
-    official_packages: Vec<String>,
-    aur_packages: Vec<String>,
+    official_packages: Vec<PackageUpdate>,
+    aur_packages: Vec<PackageUpdate>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(main_box) = window.child().and_downcast::<GtkBox>() else {
         return Err("Could not find main box".into());
