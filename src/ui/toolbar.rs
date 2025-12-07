@@ -386,7 +386,20 @@ fn start_installation_in_terminal(
                 .join(" ");
 
             let cmd = format!(
-                r#"expect -c 'set timeout -1; log_user 0; spawn sudo pacman -S {pkgs}; log_user 1; expect {{Proceed with installation\? \[Y/n\]}} {{ send -- "y\r" }}; expect eof'; while [ -e /var/lib/pacman/db.lck ]; do sleep 0.2; done"#,
+                r#"expect -c '
+set timeout -1
+log_user 0
+spawn sudo pacman -S {pkgs}
+log_user 1
+
+expect_background {{
+    -re {{Proceed with installation\? \[Y/n\]}} {{
+        send -- "y\r"
+    }}
+}}
+
+interact
+' ; while [ -e /var/lib/pacman/db.lck ]; do sleep 0.2; done"#,
                 pkgs = pkgs_quoted
             );
             parts.push(cmd);
