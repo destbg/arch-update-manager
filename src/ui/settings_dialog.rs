@@ -12,10 +12,18 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
         .transient_for(parent)
         .modal(true)
         .default_width(440)
+        .default_height(500)
         .build();
 
     let content_area = dialog.content_area();
     content_area.set_spacing(0);
+    content_area.set_vexpand(true);
+
+    let scrolled_window = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vexpand(true)
+        .build();
 
     let main_container = gtk4::Box::new(gtk4::Orientation::Vertical, 20);
     main_container.set_margin_start(24);
@@ -26,8 +34,10 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
     let (aur_enable_check, aur_combo) = create_aur_group(settings, &main_container);
     let (timeshift_check, retention_count_spin, retention_period_combo) =
         create_timeshift_group(settings, &main_container);
+    let separate_repo_check = create_packages_group(settings, &main_container);
 
-    content_area.append(&main_container);
+    scrolled_window.set_child(Some(&main_container));
+    content_area.append(&scrolled_window);
 
     let save_all = {
         let aur_enable_check = aur_enable_check.clone();
@@ -35,6 +45,7 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
         let timeshift_check = timeshift_check.clone();
         let retention_count_spin = retention_count_spin.clone();
         let retention_period_combo = retention_period_combo.clone();
+        let separate_repo_check = separate_repo_check.clone();
 
         Rc::new(move || {
             let mut new_settings = load_settings();
@@ -61,6 +72,8 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
                     _ => SnapshotRetentionPeriod::Forever,
                 };
             }
+
+            new_settings.separate_repository_groups = separate_repo_check.is_active();
 
             if let Err(e) = save_settings(&new_settings) {
                 eprintln!("Failed to save settings: {}", e);
@@ -105,8 +118,14 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
         save_all_clone();
     });
 
+    let save_all_clone = save_all.clone();
     retention_period_combo.connect_changed(move |_| {
-        save_all();
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    separate_repo_check.connect_toggled(move |_| {
+        save_all_clone();
     });
 
     dialog.present();
@@ -233,6 +252,24 @@ fn create_timeshift_group(
         retention_count_spin,
         retention_period_combo,
     );
+}
+
+fn create_packages_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::CheckButton {
+    let timeshift_section = create_preference_group(
+        "Separate Repository Groups",
+        "Separate packages from different repository groups during updates based on the servers they come from. This way packages from the official Arch Linux repositories will be handled separately from those from third-party repositories and if the servers are down there will still be a partial update. (Not a good idea to enable this on CachyOS)",
+    );
+
+    let timeshift_check =
+        gtk4::CheckButton::with_label("Separate packages from different repository groups");
+    timeshift_check.add_css_class("settings-check");
+    timeshift_check.set_active(settings.separate_repository_groups);
+
+    timeshift_section.append(&timeshift_check);
+
+    main_container.append(&timeshift_section);
+
+    return timeshift_check;
 }
 
 fn create_preference_group(title: &str, description: &str) -> gtk4::Box {

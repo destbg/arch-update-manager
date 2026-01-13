@@ -9,6 +9,7 @@ use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
 use crate::ui::package_list::update_statusbar;
+use crate::ui::settings_dialog::show_settings_dialog;
 use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
@@ -21,7 +22,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-pub fn create_toolbar() -> GtkBox {
+pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
     let toolbar_container = GtkBox::new(Orientation::Vertical, 6);
     toolbar_container.set_margin_start(6);
     toolbar_container.set_margin_end(6);
@@ -127,6 +128,33 @@ pub fn create_toolbar() -> GtkBox {
         }
     ));
     toolbar.append(&install_btn);
+
+    if show_settings_button {
+        let spacer = GtkBox::new(Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        toolbar.append(&spacer);
+
+        let separator3 = Separator::new(Orientation::Vertical);
+        toolbar.append(&separator3);
+
+        let settings_btn = Button::new();
+        settings_btn.set_child(Some(&create_button_content(
+            "preferences-system-symbolic",
+            "Settings",
+        )));
+        settings_btn.set_tooltip_text(Some("Settings"));
+        settings_btn.connect_clicked(clone!(
+            #[weak]
+            toolbar,
+            move |_| {
+                if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
+                    let settings = load_settings();
+                    show_settings_dialog(&window, &settings);
+                }
+            }
+        ));
+        toolbar.append(&settings_btn);
+    }
 
     toolbar_container.append(&toolbar);
 
@@ -363,22 +391,31 @@ fn start_installation_in_terminal(
     official_packages: Vec<PackageUpdate>,
     aur_packages: Vec<PackageUpdate>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let by_server = group_repos_by_base_server()?;
-    let repo_sets = unique_repo_sets(&by_server);
+    let settings = load_settings();
 
     let pacman_cmd = if !official_packages.is_empty() {
         let mut parts: Vec<String> = Vec::new();
-        for set in repo_sets {
-            let mut pkgs: Vec<String> = official_packages
-                .iter()
-                .filter(|p| set.contains(&p.repository))
-                .map(|p| p.name.clone())
-                .collect();
 
-            if pkgs.is_empty() {
-                continue;
-            }
+        let package_groups: Vec<Vec<String>> = if settings.separate_repository_groups {
+            let by_server = group_repos_by_base_server()?;
+            let repo_sets = unique_repo_sets(&by_server);
 
+            repo_sets
+                .into_iter()
+                .map(|set| {
+                    official_packages
+                        .iter()
+                        .filter(|p| set.contains(&p.repository))
+                        .map(|p| p.name.clone())
+                        .collect()
+                })
+                .filter(|pkgs: &Vec<String>| !pkgs.is_empty())
+                .collect()
+        } else {
+            vec![official_packages.iter().map(|p| p.name.clone()).collect()]
+        };
+
+        for mut pkgs in package_groups {
             let pkgs_quoted = pkgs
                 .drain(..)
                 .map(|p| quote(&p).map(|cow| cow.into_owned()))

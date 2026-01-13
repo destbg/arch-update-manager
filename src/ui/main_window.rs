@@ -1,3 +1,4 @@
+use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::package_updates::get_package_updates;
 use crate::helpers::settings::load_settings;
 use crate::models::package_object::PackageUpdateObject;
@@ -27,19 +28,24 @@ pub fn build_ui(app: &Application) {
         .default_height(600)
         .build();
 
+    let decorations_disabled = are_decorations_disabled();
+
     let header_bar = HeaderBar::new();
     header_bar.set_title_widget(Some(&gtk4::Label::new(Some("Arch Update Manager"))));
 
-    let settings_button = Button::from_icon_name("preferences-system-symbolic");
-    settings_button.set_tooltip_text(Some("Settings"));
+    if !decorations_disabled {
+        let settings_button = Button::from_icon_name("preferences-system-symbolic");
+        settings_button.set_tooltip_text(Some("Settings"));
 
-    let window_clone = window.clone();
-    settings_button.connect_clicked(move |_| {
-        let settings = load_settings();
-        show_settings_dialog(&window_clone, &settings);
-    });
+        let window_clone = window.clone();
+        settings_button.connect_clicked(move |_| {
+            let settings = load_settings();
+            show_settings_dialog(&window_clone, &settings);
+        });
 
-    header_bar.pack_end(&settings_button);
+        header_bar.pack_end(&settings_button);
+    }
+
     window.set_titlebar(Some(&header_bar));
 
     let main_box = GtkBox::new(Orientation::Vertical, 0);
@@ -59,7 +65,7 @@ pub fn build_ui(app: &Application) {
     let terminal_box = create_terminal_page();
     stack.add_named(&terminal_box, Some("terminal"));
 
-    let content_box = create_main_content();
+    let content_box = create_main_content(decorations_disabled);
     stack.add_named(&content_box, Some("content"));
 
     main_box.append(&stack);
@@ -78,10 +84,10 @@ pub fn build_ui(app: &Application) {
     });
 }
 
-fn create_main_content() -> GtkBox {
+fn create_main_content(decorations_disabled: bool) -> GtkBox {
     let content_box = GtkBox::new(Orientation::Vertical, 0);
 
-    let toolbar_container = create_toolbar();
+    let toolbar_container = create_toolbar(decorations_disabled);
 
     content_box.append(&toolbar_container);
 

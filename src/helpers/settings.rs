@@ -9,19 +9,24 @@ use crate::models::snapshot_retention_period::SnapshotRetentionPeriod;
 
 static SETTINGS_CACHE: OnceLock<Mutex<AppSettings>> = OnceLock::new();
 
+fn default_settings() -> AppSettings {
+    return AppSettings {
+        enable_aur_support: false,
+        preferred_aur_helper: None,
+        create_timeshift_snapshot: true,
+        snapshot_retention_count: 1,
+        snapshot_retention_period: SnapshotRetentionPeriod::Forever,
+        separate_repository_groups: false,
+    };
+}
+
 pub fn load_settings() -> AppSettings {
     let cache = SETTINGS_CACHE.get_or_init(|| {
         let settings = match load_from_file() {
             Ok(settings) => settings,
             Err(e) => {
                 eprintln!("Failed to load settings: {}, using defaults", e);
-                AppSettings {
-                    enable_aur_support: false,
-                    preferred_aur_helper: None,
-                    create_timeshift_snapshot: true,
-                    snapshot_retention_count: 1,
-                    snapshot_retention_period: SnapshotRetentionPeriod::Forever,
-                }
+                default_settings()
             }
         };
         Mutex::new(settings)
@@ -84,13 +89,7 @@ fn load_from_file() -> Result<AppSettings> {
     let path = settings_path()?;
 
     if !path.exists() {
-        return Ok(AppSettings {
-            enable_aur_support: false,
-            preferred_aur_helper: None,
-            create_timeshift_snapshot: true,
-            snapshot_retention_count: 1,
-            snapshot_retention_period: SnapshotRetentionPeriod::Forever,
-        });
+        return Ok(default_settings());
     }
 
     let content = fs::read_to_string(&path).context("Failed to read settings file")?;

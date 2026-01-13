@@ -23,6 +23,8 @@ pub struct AppSettings {
     pub snapshot_retention_count: u32,
     #[serde(default)]
     pub snapshot_retention_period: SnapshotRetentionPeriod,
+    #[serde(default)]
+    pub separate_repository_groups: bool,
 }
 
 fn default_snapshot_retention_count() -> u32 {
