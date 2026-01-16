@@ -18,11 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Normalize line endings
-        run: |
-          git config --global core.autocrlf false
-          sed -i 's/\r$//' PKGBUILD PKGBUILD.bin
-
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib pkgconf rust gtk4 glib2 vte4 github-cli
