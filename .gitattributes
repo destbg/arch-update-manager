@@ -1,2 +1,6 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+PKGBUILD text eol=lf
+PKGBUILD.bin text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
