@@ -25,6 +25,8 @@ pub struct AppSettings {
     pub snapshot_retention_period: SnapshotRetentionPeriod,
     #[serde(default)]
     pub separate_repository_groups: bool,
+    #[serde(default)]
+    pub separate_repositories: Vec<String>,
 }
 
 fn default_snapshot_retention_count() -> u32 {

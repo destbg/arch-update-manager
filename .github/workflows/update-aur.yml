@@ -90,9 +90,11 @@ jobs:
       - name: Copy PKGBUILD into AUR repo
         run: |
           cp -f PKGBUILD aur/PKGBUILD
+          sed -i 's/\r$//' aur/PKGBUILD
           chown -R builder:builder aur
 
           cp -f PKGBUILD.bin aur-bin/PKGBUILD
+          sed -i 's/\r$//' aur-bin/PKGBUILD
           chown -R builder:builder aur-bin
 
       - name: Update pkgver and pkgrel

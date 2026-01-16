@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
 use std::process::Command;
 
-pub fn group_repos_by_base_server() -> Result<HashMap<String, BTreeSet<String>>, Box<dyn Error>> {
+pub fn get_repository_groups() -> Result<Vec<Vec<String>>, Box<dyn Error>> {
     let repo_out = Command::new("pacman-conf").arg("--repo-list").output()?;
     if !repo_out.status.success() {
         return Err("pacman-conf --repo-list failed".into());
@@ -55,16 +55,17 @@ pub fn group_repos_by_base_server() -> Result<HashMap<String, BTreeSet<String>>,
         }
     }
 
-    return Ok(servers);
-}
-
-pub fn unique_repo_sets(by_server: &HashMap<String, BTreeSet<String>>) -> BTreeSet<Vec<String>> {
-    let mut sets = BTreeSet::new();
-    for repos in by_server.values() {
-        let v: Vec<String> = repos.iter().cloned().collect();
-        sets.insert(v);
+    let mut seen_sets: HashSet<Vec<String>> = HashSet::new();
+    for repos in servers.into_values() {
+        let mut repos_vec: Vec<String> = repos.into_iter().collect();
+        repos_vec.sort();
+        seen_sets.insert(repos_vec);
     }
-    return sets;
+
+    let mut result: Vec<Vec<String>> = seen_sets.into_iter().collect();
+    result.sort_by(|a, b| a.join(",").cmp(&b.join(",")));
+
+    return Ok(result);
 }
 
 fn base_from_url(url: &str) -> &str {

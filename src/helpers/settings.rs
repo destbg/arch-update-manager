@@ -17,6 +17,7 @@ fn default_settings() -> AppSettings {
         snapshot_retention_count: 1,
         snapshot_retention_period: SnapshotRetentionPeriod::Forever,
         separate_repository_groups: false,
+        separate_repositories: Vec::new(),
     };
 }
 

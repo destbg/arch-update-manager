@@ -1,7 +1,7 @@
 use crate::constants::{AUR_NAME, TIMESHIFT_COMMENT};
 use crate::helpers::aur::install_aur_packages;
 use crate::helpers::get_navigation_stack::get_navigation_stack;
-use crate::helpers::pacman_repos::{group_repos_by_base_server, unique_repo_sets};
+use crate::helpers::pacman_repos::get_repository_groups;
 use crate::helpers::settings::load_settings;
 use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_snapshot};
@@ -18,6 +18,7 @@ use gtk4::{
     ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
 };
 use shlex::try_quote as quote;
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -396,24 +397,44 @@ fn start_installation_in_terminal(
     let pacman_cmd = if !official_packages.is_empty() {
         let mut parts: Vec<String> = Vec::new();
 
-        let package_groups: Vec<Vec<String>> = if settings.separate_repository_groups {
-            let by_server = group_repos_by_base_server()?;
-            let repo_sets = unique_repo_sets(&by_server);
+        let package_groups: Vec<Vec<String>> =
+            if settings.separate_repository_groups && !settings.separate_repositories.is_empty() {
+                let groups = get_repository_groups()?;
 
-            repo_sets
-                .into_iter()
-                .map(|set| {
-                    official_packages
-                        .iter()
-                        .filter(|p| set.contains(&p.repository))
-                        .map(|p| p.name.clone())
-                        .collect()
-                })
-                .filter(|pkgs: &Vec<String>| !pkgs.is_empty())
-                .collect()
-        } else {
-            vec![official_packages.iter().map(|p| p.name.clone()).collect()]
-        };
+                let mut repo_to_group_id: HashMap<String, String> = HashMap::new();
+                for repos in &groups {
+                    let group_id = repos.join(",");
+                    for repo in repos {
+                        repo_to_group_id.insert(repo.clone(), group_id.clone());
+                    }
+                }
+
+                let mut separated_groups: HashMap<String, Vec<String>> = HashMap::new();
+                let mut combined_group: Vec<String> = Vec::new();
+
+                for pkg in &official_packages {
+                    if let Some(group_id) = repo_to_group_id.get(&pkg.repository) {
+                        if settings.separate_repositories.contains(group_id) {
+                            separated_groups
+                                .entry(group_id.clone())
+                                .or_default()
+                                .push(pkg.name.clone());
+                        } else {
+                            combined_group.push(pkg.name.clone());
+                        }
+                    } else {
+                        combined_group.push(pkg.name.clone());
+                    }
+                }
+
+                let mut groups: Vec<Vec<String>> = separated_groups.into_values().collect();
+                if !combined_group.is_empty() {
+                    groups.push(combined_group);
+                }
+                groups.into_iter().filter(|g| !g.is_empty()).collect()
+            } else {
+                vec![official_packages.iter().map(|p| p.name.clone()).collect()]
+            };
 
         for mut pkgs in package_groups {
             let pkgs_quoted = pkgs

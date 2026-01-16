@@ -1,7 +1,9 @@
 use gtk4::{ApplicationWindow, prelude::*};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::{
+    helpers::pacman_repos::get_repository_groups,
     helpers::settings::{get_available_aur_helpers, load_settings, save_settings},
     models::{app_settings::AppSettings, snapshot_retention_period::SnapshotRetentionPeriod},
 };
@@ -34,7 +36,7 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
     let (aur_enable_check, aur_combo) = create_aur_group(settings, &main_container);
     let (timeshift_check, retention_count_spin, retention_period_combo) =
         create_timeshift_group(settings, &main_container);
-    let separate_repo_check = create_packages_group(settings, &main_container);
+    let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &main_container);
 
     scrolled_window.set_child(Some(&main_container));
     content_area.append(&scrolled_window);
@@ -46,6 +48,7 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
         let retention_count_spin = retention_count_spin.clone();
         let retention_period_combo = retention_period_combo.clone();
         let separate_repo_check = separate_repo_check.clone();
+        let repo_checkboxes = repo_checkboxes.clone();
 
         Rc::new(move || {
             let mut new_settings = load_settings();
@@ -74,6 +77,14 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
             }
 
             new_settings.separate_repository_groups = separate_repo_check.is_active();
+
+            let mut selected_repos = Vec::new();
+            for (repo_id, checkbox) in repo_checkboxes.borrow().iter() {
+                if checkbox.is_active() {
+                    selected_repos.push(repo_id.clone());
+                }
+            }
+            new_settings.separate_repositories = selected_repos;
 
             if let Err(e) = save_settings(&new_settings) {
                 eprintln!("Failed to save settings: {}", e);
@@ -123,10 +134,22 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
         save_all_clone();
     });
 
+    let repo_checkboxes_weak = repo_checkboxes.clone();
     let save_all_clone = save_all.clone();
-    separate_repo_check.connect_toggled(move |_| {
+    separate_repo_check.connect_toggled(move |check| {
+        let is_active = check.is_active();
+        for (_, checkbox) in repo_checkboxes_weak.borrow().iter() {
+            checkbox.set_sensitive(is_active);
+        }
         save_all_clone();
     });
+
+    for (_, checkbox) in repo_checkboxes.borrow().iter() {
+        let save_all_clone = save_all.clone();
+        checkbox.connect_toggled(move |_| {
+            save_all_clone();
+        });
+    }
 
     dialog.present();
 }
@@ -254,22 +277,95 @@ fn create_timeshift_group(
     );
 }
 
-fn create_packages_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::CheckButton {
-    let timeshift_section = create_preference_group(
+fn create_packages_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+) -> (
+    gtk4::CheckButton,
+    Rc<RefCell<Vec<(String, gtk4::CheckButton)>>>,
+) {
+    let section = create_preference_group(
         "Separate Repository Groups",
-        "Separate packages from different repository groups during updates based on the servers they come from. This way packages from the official Arch Linux repositories will be handled separately from those from third-party repositories and if the servers are down there will still be a partial update. (Not a good idea to enable this on CachyOS)",
+        "Separate packages from different repository groups during updates based on the servers they come from. This way packages from the official Arch Linux repositories will be handled separately from those from third-party repositories and if the servers are down there will still be a partial update.",
     );
 
-    let timeshift_check =
-        gtk4::CheckButton::with_label("Separate packages from different repository groups");
-    timeshift_check.add_css_class("settings-check");
-    timeshift_check.set_active(settings.separate_repository_groups);
+    let enable_check =
+        gtk4::CheckButton::with_label("Enable separate repository group installation");
+    enable_check.add_css_class("settings-check");
+    enable_check.set_active(settings.separate_repository_groups);
+    section.append(&enable_check);
 
-    timeshift_section.append(&timeshift_check);
+    let repo_checkboxes: Rc<RefCell<Vec<(String, gtk4::CheckButton)>>> =
+        Rc::new(RefCell::new(Vec::new()));
 
-    main_container.append(&timeshift_section);
+    match get_repository_groups() {
+        Ok(groups) => {
+            if groups.len() > 1 {
+                let repos_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+                repos_box.set_margin_top(12);
+                repos_box.set_margin_start(24);
 
-    return timeshift_check;
+                for repos in groups {
+                    let label_text = repos.join(", ");
+                    let repo_id = repos.join(",");
+
+                    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+
+                    let checkbox = gtk4::CheckButton::new();
+                    checkbox.add_css_class("settings-check");
+                    checkbox.set_active(settings.separate_repositories.contains(&repo_id));
+                    checkbox.set_sensitive(settings.separate_repository_groups);
+                    row.append(&checkbox);
+
+                    let label = gtk4::Label::new(Some(&label_text));
+                    label.set_wrap(true);
+                    label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+                    label.set_xalign(0.0);
+                    label.set_hexpand(true);
+
+                    let click = gtk4::GestureClick::new();
+                    let checkbox_weak = checkbox.downgrade();
+                    click.connect_released(move |_, _, _, _| {
+                        if let Some(cb) = checkbox_weak.upgrade() {
+                            if cb.is_sensitive() {
+                                cb.set_active(!cb.is_active());
+                            }
+                        }
+                    });
+                    label.add_controller(click);
+
+                    row.append(&label);
+
+                    repos_box.append(&row);
+                    repo_checkboxes.borrow_mut().push((repo_id, checkbox));
+                }
+
+                section.append(&repos_box);
+            } else {
+                let info_label = gtk4::Label::new(Some(
+                    "Only one repository group detected. No separation needed.",
+                ));
+                info_label.set_wrap(true);
+                info_label.set_xalign(0.0);
+                info_label.set_margin_top(8);
+                info_label.add_css_class("dim-label");
+                section.append(&info_label);
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to get repository groups: {}", e);
+            let error_label = gtk4::Label::new(Some("Failed to detect repository groups."));
+            error_label.set_wrap(true);
+            error_label.set_xalign(0.0);
+            error_label.set_margin_top(8);
+            error_label.add_css_class("dim-label");
+            section.append(&error_label);
+        }
+    }
+
+    main_container.append(&section);
+
+    return (enable_check, repo_checkboxes);
 }
 
 fn create_preference_group(title: &str, description: &str) -> gtk4::Box {
