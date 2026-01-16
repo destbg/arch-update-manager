@@ -122,6 +122,7 @@ jobs:
           AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
           AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
         run: |
+          sed -i 's/\r$//' PKGBUILD .SRCINFO
           sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
           sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
           sudo -u builder git add PKGBUILD .SRCINFO
@@ -138,6 +139,7 @@ jobs:
           AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
           AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
         run: |
+          sed -i 's/\r$//' PKGBUILD .SRCINFO
           sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
           sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
           sudo -u builder git add PKGBUILD .SRCINFO
