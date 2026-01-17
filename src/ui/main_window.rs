@@ -1,6 +1,7 @@
 use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::package_updates::get_package_updates;
 use crate::helpers::settings::load_settings;
+use crate::helpers::unselected_packages::load_unselected_packages;
 use crate::models::package_object::PackageUpdateObject;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::error_page::{create_error_page, update_error_page_message};
@@ -186,7 +187,17 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
 
                 list_store.remove_all();
 
-                for package in packages {
+                let settings = load_settings();
+                let unselected = if settings.remember_unselected_packages {
+                    load_unselected_packages()
+                } else {
+                    Vec::new()
+                };
+
+                for mut package in packages {
+                    if unselected.contains(&package.name) {
+                        package.selected = false;
+                    }
                     list_store.append(&PackageUpdateObject::new(package));
                 }
 

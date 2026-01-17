@@ -27,6 +27,12 @@ pub struct AppSettings {
     pub separate_repository_groups: bool,
     #[serde(default)]
     pub separate_repositories: Vec<String>,
+    #[serde(default = "default_remember_unselected")]
+    pub remember_unselected_packages: bool,
+}
+
+fn default_remember_unselected() -> bool {
+    true
 }
 
 fn default_snapshot_retention_count() -> u32 {

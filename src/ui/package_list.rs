@@ -1,3 +1,5 @@
+use crate::helpers::settings::load_settings;
+use crate::helpers::unselected_packages::save_unselected_packages;
 use crate::models::package_object::PackageUpdateObject;
 use gio::ListStore;
 use glib::{clone, format_size};
@@ -93,6 +95,7 @@ fn create_upgrade_column(column_view: &ColumnView, store: &ListStore, statusbar:
                 move |check| {
                     obj.set_selected(check.is_active());
                     update_statusbar(&statusbar, &store);
+                    save_unselected_from_store(&store);
                 }
             ));
         }
@@ -232,4 +235,25 @@ pub fn update_statusbar(statusbar: &Statusbar, store: &ListStore) {
     };
 
     statusbar.push(context_id, &status_text);
+}
+
+pub fn save_unselected_from_store(store: &ListStore) {
+    let settings = load_settings();
+    if !settings.remember_unselected_packages {
+        return;
+    }
+
+    let n_items = store.n_items();
+    let mut unselected = Vec::new();
+
+    for i in 0..n_items {
+        if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
+            let data = item.data();
+            if !data.selected {
+                unselected.push(data.name.clone());
+            }
+        }
+    }
+
+    save_unselected_packages(unselected);
 }

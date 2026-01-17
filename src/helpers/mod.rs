@@ -7,3 +7,4 @@ pub mod pacman_repos;
 pub mod settings;
 pub mod terminal;
 pub mod timeshift;
+pub mod unselected_packages;

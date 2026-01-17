@@ -8,7 +8,7 @@ use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_sn
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
-use crate::ui::package_list::update_statusbar;
+use crate::ui::package_list::{save_unselected_from_store, update_statusbar};
 use crate::ui::settings_dialog::show_settings_dialog;
 use gio::ListStore;
 use glib::clone;
@@ -219,6 +219,7 @@ fn clear_all_selections(store: &ListStore, statusbar: &Statusbar) {
     }
 
     update_statusbar(statusbar, store);
+    save_unselected_from_store(store);
 }
 
 fn select_all_packages(store: &ListStore, statusbar: &Statusbar) {
@@ -238,6 +239,7 @@ fn select_all_packages(store: &ListStore, statusbar: &Statusbar) {
     }
 
     update_statusbar(statusbar, store);
+    save_unselected_from_store(store);
 }
 
 fn install_selected_packages_ui(

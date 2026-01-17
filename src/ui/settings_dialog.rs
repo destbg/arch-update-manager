@@ -37,6 +37,7 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
     let (timeshift_check, retention_count_spin, retention_period_combo) =
         create_timeshift_group(settings, &main_container);
     let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &main_container);
+    let remember_unselected_check = create_remember_unselected_group(settings, &main_container);
 
     scrolled_window.set_child(Some(&main_container));
     content_area.append(&scrolled_window);
@@ -49,6 +50,7 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
         let retention_period_combo = retention_period_combo.clone();
         let separate_repo_check = separate_repo_check.clone();
         let repo_checkboxes = repo_checkboxes.clone();
+        let remember_unselected_check = remember_unselected_check.clone();
 
         Rc::new(move || {
             let mut new_settings = load_settings();
@@ -85,6 +87,8 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
                 }
             }
             new_settings.separate_repositories = selected_repos;
+
+            new_settings.remember_unselected_packages = remember_unselected_check.is_active();
 
             if let Err(e) = save_settings(&new_settings) {
                 eprintln!("Failed to save settings: {}", e);
@@ -150,6 +154,11 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
             save_all_clone();
         });
     }
+
+    let save_all_clone = save_all.clone();
+    remember_unselected_check.connect_toggled(move |_| {
+        save_all_clone();
+    });
 
     dialog.present();
 }
@@ -366,6 +375,25 @@ fn create_packages_group(
     main_container.append(&section);
 
     return (enable_check, repo_checkboxes);
+}
+
+fn create_remember_unselected_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "Remember Package Selection",
+        "Remember which packages were unselected between sessions.",
+    );
+
+    let check = gtk4::CheckButton::with_label("Remember unselected packages");
+    check.add_css_class("settings-check");
+    check.set_active(settings.remember_unselected_packages);
+
+    section.append(&check);
+    main_container.append(&section);
+
+    return check;
 }
 
 fn create_preference_group(title: &str, description: &str) -> gtk4::Box {
