@@ -3,12 +3,19 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::{
-    helpers::pacman_repos::get_repository_groups,
-    helpers::settings::{get_available_aur_helpers, load_settings, save_settings},
+    helpers::{
+        pacman_repos::get_repository_groups,
+        settings::{get_available_aur_helpers, load_settings, save_settings},
+    },
     models::{app_settings::AppSettings, snapshot_retention_period::SnapshotRetentionPeriod},
+    ui::favorites_dialog,
 };
 
-pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) {
+pub fn show_settings_dialog(
+    parent: &ApplicationWindow,
+    settings: &AppSettings,
+    favorites_column: Option<gtk4::ColumnViewColumn>,
+) {
     let dialog = gtk4::Dialog::builder()
         .title("Settings")
         .transient_for(parent)
@@ -36,6 +43,8 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
     let (aur_enable_check, aur_combo) = create_aur_group(settings, &main_container);
     let (timeshift_check, retention_count_spin, retention_period_combo) =
         create_timeshift_group(settings, &main_container);
+    let (fav_enable_check, fav_show_col_check, manage_btn) =
+        create_favorites_group(settings, &main_container, parent);
     let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &main_container);
     let remember_unselected_check = create_remember_unselected_group(settings, &main_container);
 
@@ -48,6 +57,8 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
         let timeshift_check = timeshift_check.clone();
         let retention_count_spin = retention_count_spin.clone();
         let retention_period_combo = retention_period_combo.clone();
+        let fav_enable_check = fav_enable_check.clone();
+        let fav_show_col_check = fav_show_col_check.clone();
         let separate_repo_check = separate_repo_check.clone();
         let repo_checkboxes = repo_checkboxes.clone();
         let remember_unselected_check = remember_unselected_check.clone();
@@ -77,6 +88,9 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
                     _ => SnapshotRetentionPeriod::Forever,
                 };
             }
+
+            new_settings.enable_favorites = fav_enable_check.is_active();
+            new_settings.show_favorites_column = fav_show_col_check.is_active();
 
             new_settings.separate_repository_groups = separate_repo_check.is_active();
 
@@ -135,6 +149,41 @@ pub fn show_settings_dialog(parent: &ApplicationWindow, settings: &AppSettings) 
 
     let save_all_clone = save_all.clone();
     retention_period_combo.connect_changed(move |_| {
+        save_all_clone();
+    });
+
+    let fav_show_col_check_weak = fav_show_col_check.downgrade();
+    let manage_btn_weak = manage_btn.downgrade();
+    let favorites_column2 = favorites_column.clone();
+    let save_all_clone = save_all.clone();
+    fav_enable_check.connect_toggled(move |check| {
+        let is_enabled = check.is_active();
+        if let Some(col) = &favorites_column {
+            let show_col = fav_show_col_check_weak
+                .upgrade()
+                .map(|c| c.is_active())
+                .unwrap_or(false);
+            col.set_visible(is_enabled && show_col);
+        }
+        if let Some(c) = fav_show_col_check_weak.upgrade() {
+            c.set_sensitive(is_enabled);
+        }
+        if let Some(btn) = manage_btn_weak.upgrade() {
+            btn.set_sensitive(is_enabled);
+        }
+        save_all_clone();
+    });
+
+    let fav_enable_check_weak = fav_enable_check.downgrade();
+    let save_all_clone = save_all.clone();
+    fav_show_col_check.connect_toggled(move |check| {
+        if let Some(col) = &favorites_column2 {
+            let is_enabled = fav_enable_check_weak
+                .upgrade()
+                .map(|c| c.is_active())
+                .unwrap_or(false);
+            col.set_visible(is_enabled && check.is_active());
+        }
         save_all_clone();
     });
 
@@ -284,6 +333,39 @@ fn create_timeshift_group(
         retention_count_spin,
         retention_period_combo,
     );
+}
+
+fn create_favorites_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+    parent: &ApplicationWindow,
+) -> (gtk4::CheckButton, gtk4::CheckButton, gtk4::Button) {
+    let section = create_preference_group(
+        "Favorite Packages",
+        "Mark packages as favorites to show them at the top of the package list.",
+    );
+
+    let enable_check = gtk4::CheckButton::with_label("Enable favorite packages");
+    enable_check.add_css_class("settings-check");
+    enable_check.set_active(settings.enable_favorites);
+    section.append(&enable_check);
+
+    let show_col_check = gtk4::CheckButton::with_label("Show favorites column in package list");
+    show_col_check.add_css_class("settings-check");
+    show_col_check.set_active(settings.show_favorites_column);
+    show_col_check.set_sensitive(settings.enable_favorites);
+    section.append(&show_col_check);
+
+    let manage_btn = gtk4::Button::with_label("Manage Favorite Packages");
+    manage_btn.set_sensitive(settings.enable_favorites);
+    let parent_clone = parent.clone();
+    manage_btn.connect_clicked(move |_| {
+        favorites_dialog::show_manage_favorites_dialog(parent_clone.upcast_ref::<gtk4::Window>());
+    });
+    section.append(&manage_btn);
+    main_container.append(&section);
+
+    return (enable_check, show_col_check, manage_btn);
 }
 
 fn create_packages_group(

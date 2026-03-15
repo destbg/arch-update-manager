@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use regex::Regex;
+use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::process::Command;
+use std::{error, fmt};
 
 use crate::helpers::aur::get_aur_updates;
 use crate::helpers::settings::load_settings;
@@ -9,8 +12,8 @@ use crate::models::package_info::PackageInfo;
 use crate::models::package_update::PackageUpdate;
 use crate::models::update_error::UpdateError;
 
-impl std::fmt::Display for UpdateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Display for UpdateError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             UpdateError::CommandFailed(msg) => write!(f, "Command failed: {}", msg),
             UpdateError::IoError(msg) => write!(f, "IO error: {}", msg),
@@ -19,7 +22,7 @@ impl std::fmt::Display for UpdateError {
     }
 }
 
-impl std::error::Error for UpdateError {}
+impl error::Error for UpdateError {}
 
 impl From<std::io::Error> for UpdateError {
     fn from(error: std::io::Error) -> Self {
@@ -147,10 +150,10 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
         let b_is_core = b.repository.contains("core");
 
         return match (a_is_core, b_is_core) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
             _ => match a.repository.cmp(&b.repository) {
-                std::cmp::Ordering::Equal => a.name.cmp(&b.name),
+                Ordering::Equal => a.name.cmp(&b.name),
                 other => other,
             },
         };

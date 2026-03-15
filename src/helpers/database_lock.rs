@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 pub fn remove_database_lock() -> Result<(), String> {
     let lock_path = "/var/lib/pacman/db.lck";
@@ -7,7 +7,7 @@ pub fn remove_database_lock() -> Result<(), String> {
         return Err("The database lock file does not exist.".to_string());
     }
 
-    return match std::fs::remove_file(lock_path) {
+    return match fs::remove_file(lock_path) {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("Failed to remove database lock: {}", e)),
     };

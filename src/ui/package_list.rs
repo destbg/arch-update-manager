@@ -1,4 +1,4 @@
-use crate::helpers::settings::load_settings;
+use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::unselected_packages::save_unselected_packages;
 use crate::models::package_object::PackageUpdateObject;
 use gio::ListStore;
@@ -6,7 +6,7 @@ use glib::{clone, format_size};
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, Label, Orientation, SingleSelection,
-    Statusbar,
+    Statusbar, ToggleButton,
 };
 
 pub fn create_package_list() -> (ColumnView, ListStore, Statusbar) {
@@ -21,6 +21,7 @@ pub fn create_package_list() -> (ColumnView, ListStore, Statusbar) {
     column_view.set_show_row_separators(true);
     column_view.set_show_column_separators(false);
 
+    create_favorite_column(&column_view);
     create_repository_column(&column_view);
     create_upgrade_column(&column_view, &store, &statusbar);
     create_name_column(&column_view);
@@ -28,6 +29,98 @@ pub fn create_package_list() -> (ColumnView, ListStore, Statusbar) {
     create_size_column(&column_view);
 
     return (column_view, store, statusbar);
+}
+
+fn create_favorite_column(column_view: &ColumnView) {
+    let css = gtk4::CssProvider::new();
+    css.load_from_data(
+        "button.favorite-star,
+         button.favorite-star:checked {
+             background-color: transparent;
+             box-shadow: none;
+         }
+         button.favorite-star:hover,
+         button.favorite-star:checked:hover {
+             background-color: alpha(currentColor, 0.08);
+             box-shadow: none;
+         }",
+    );
+    if let Some(display) = gtk4::gdk::Display::default() {
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &css,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
+    let factory = gtk4::SignalListItemFactory::new();
+
+    factory.connect_setup(move |_factory, item| {
+        let button = ToggleButton::new();
+        button.set_halign(gtk4::Align::Center);
+        button.set_icon_name("non-starred-symbolic");
+        button.add_css_class("flat");
+        button.add_css_class("favorite-star");
+        item.downcast_ref::<gtk4::ListItem>()
+            .unwrap()
+            .set_child(Some(&button));
+    });
+
+    factory.connect_bind(move |_factory, item| {
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        let obj = list_item
+            .item()
+            .and_downcast::<PackageUpdateObject>()
+            .unwrap();
+        let pkg_name = obj.data().name.clone();
+        let button = list_item.child().and_downcast::<ToggleButton>().unwrap();
+
+        let is_fav = load_settings().favorite_packages.contains(&pkg_name);
+        button.set_active(is_fav);
+        button.set_icon_name(if is_fav {
+            "starred-symbolic"
+        } else {
+            "non-starred-symbolic"
+        });
+
+        let handler_id = button.connect_toggled(move |btn| {
+            let mut s = load_settings();
+            let is_active = btn.is_active();
+            btn.set_icon_name(if is_active {
+                "starred-symbolic"
+            } else {
+                "non-starred-symbolic"
+            });
+            if is_active {
+                if !s.favorite_packages.contains(&pkg_name) {
+                    s.favorite_packages.push(pkg_name.clone());
+                }
+            } else {
+                s.favorite_packages.retain(|p| p != &pkg_name);
+            }
+            let _ = save_settings(&s);
+        });
+
+        unsafe {
+            button.set_data("fav_handler", handler_id);
+        }
+    });
+
+    factory.connect_unbind(move |_factory, item| {
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        let button = list_item.child().and_downcast::<ToggleButton>().unwrap();
+        unsafe {
+            if let Some(handler_id) = button.steal_data::<glib::SignalHandlerId>("fav_handler") {
+                button.disconnect(handler_id);
+            }
+        }
+    });
+
+    let column = ColumnViewColumn::new(Some("Favorite"), Some(factory));
+    column.set_fixed_width(62);
+    let settings = load_settings();
+    column.set_visible(settings.enable_favorites && settings.show_favorites_column);
+    column_view.append_column(&column);
 }
 
 fn create_repository_column(column_view: &ColumnView) {

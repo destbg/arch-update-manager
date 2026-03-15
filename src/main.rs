@@ -9,6 +9,7 @@ use gtk4::Application;
 use gtk4::Settings as GtkSettings;
 use gtk4::prelude::*;
 use std::env;
+use std::process::Command;
 
 fn main() {
     setup_user_environment();
@@ -43,7 +44,7 @@ fn detect_prefers_dark() -> Option<bool> {
         return Some(false);
     }
 
-    if let Ok(output) = std::process::Command::new("gsettings")
+    if let Ok(output) = Command::new("gsettings")
         .args(["get", "org.gnome.desktop.interface", "color-scheme"])
         .output()
     {
@@ -58,7 +59,7 @@ fn detect_prefers_dark() -> Option<bool> {
         }
     }
 
-    if let Ok(output) = std::process::Command::new("gsettings")
+    if let Ok(output) = Command::new("gsettings")
         .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
         .output()
     {
@@ -108,7 +109,7 @@ fn find_target_user() -> Option<String> {
 }
 
 fn find_user_from_who() -> Option<String> {
-    let output = std::process::Command::new("who").output().ok()?;
+    let output = Command::new("who").output().ok()?;
     let who_output = String::from_utf8(output.stdout).ok()?;
 
     for line in who_output.lines() {
@@ -122,7 +123,7 @@ fn find_user_from_who() -> Option<String> {
 }
 
 fn find_user_from_loginctl() -> Option<String> {
-    let output = std::process::Command::new("loginctl")
+    let output = Command::new("loginctl")
         .args(&["list-sessions", "--no-legend"])
         .output()
         .ok()?;
@@ -139,10 +140,7 @@ fn find_user_from_loginctl() -> Option<String> {
 }
 
 fn get_user_uid(user: &str) -> Option<String> {
-    let output = std::process::Command::new("id")
-        .args(&["-u", user])
-        .output()
-        .ok()?;
+    let output = Command::new("id").args(&["-u", user]).output().ok()?;
 
     let uid_str = String::from_utf8(output.stdout).ok()?;
     return Some(uid_str.trim().to_string());

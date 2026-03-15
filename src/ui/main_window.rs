@@ -3,6 +3,7 @@ use crate::helpers::package_updates::get_package_updates;
 use crate::helpers::settings::load_settings;
 use crate::helpers::unselected_packages::load_unselected_packages;
 use crate::models::package_object::PackageUpdateObject;
+use crate::models::update_error::UpdateError;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::error_page::{create_error_page, update_error_page_message};
 use crate::ui::info_panel::create_info_panel;
@@ -16,8 +17,8 @@ use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
 use gtk4::{
-    Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, HeaderBar, Orientation,
-    Paned, ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
+    Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn, HeaderBar,
+    Orientation, Paned, ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
 };
 
 pub fn build_ui(app: &Application) {
@@ -41,7 +42,8 @@ pub fn build_ui(app: &Application) {
         let window_clone = window.clone();
         settings_button.connect_clicked(move |_| {
             let settings = load_settings();
-            show_settings_dialog(&window_clone, &settings);
+            let favorites_column = find_favorites_column(&window_clone);
+            show_settings_dialog(&window_clone, &settings, favorites_column);
         });
 
         header_bar.pack_end(&settings_button);
@@ -136,6 +138,22 @@ fn create_main_content(decorations_disabled: bool) -> GtkBox {
     return content_box;
 }
 
+pub fn find_favorites_column(window: &ApplicationWindow) -> Option<ColumnViewColumn> {
+    let main_box = window.child().and_downcast::<GtkBox>()?;
+    let stack = main_box.first_child().and_downcast::<Stack>()?;
+    let content_box = stack.child_by_name("content").and_downcast::<GtkBox>()?;
+    let paned = content_box
+        .last_child()
+        .and_then(|c| c.prev_sibling())
+        .and_downcast::<Paned>()?;
+    let scrolled = paned.start_child().and_downcast::<ScrolledWindow>()?;
+    let column_view = scrolled.child().and_downcast::<ColumnView>()?;
+    column_view
+        .columns()
+        .item(0)
+        .and_downcast::<ColumnViewColumn>()
+}
+
 pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindow) {
     glib::spawn_future_local(async move {
         let packages_result = gio::spawn_blocking(|| get_package_updates()).await;
@@ -194,6 +212,15 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                     Vec::new()
                 };
 
+                let mut packages = packages;
+                if settings.enable_favorites {
+                    packages.sort_by(|a, b| {
+                        let a_fav = settings.favorite_packages.contains(&a.name);
+                        let b_fav = settings.favorite_packages.contains(&b.name);
+                        b_fav.cmp(&a_fav)
+                    });
+                }
+
                 for mut package in packages {
                     if unselected.contains(&package.name) {
                         package.selected = false;
@@ -208,7 +235,7 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                 stack.set_visible_child_name("content");
             }
             Ok(Err(e)) => {
-                if let crate::models::update_error::UpdateError::SyncFailed(ref msg) = e {
+                if let UpdateError::SyncFailed(ref msg) = e {
                     if let Some(error_box) = stack.child_by_name("error").and_downcast::<GtkBox>() {
                         update_error_page_message(&error_box, msg);
                     }

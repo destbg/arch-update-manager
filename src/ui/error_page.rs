@@ -4,6 +4,8 @@ use gtk4::{Box as GtkBox, Button, Image, Label, Orientation, ScrolledWindow, Tex
 
 use crate::helpers::database_lock::{is_lock_error, remove_database_lock};
 use crate::helpers::get_navigation_stack::get_navigation_stack;
+use crate::ui::dialogs::show_error_dialog;
+use crate::ui::main_window::load_packages;
 
 pub fn create_error_page() -> GtkBox {
     let error_box = GtkBox::new(Orientation::Vertical, 20);
@@ -100,7 +102,7 @@ fn handle_retry_click(error_box: &GtkBox) {
     };
 
     stack.set_visible_child_name("loading");
-    crate::ui::main_window::load_packages(stack, content_box, window);
+    load_packages(stack, content_box, window);
 }
 
 fn handle_remove_lock(error_box: &GtkBox, remove_lock_btn: &Button, _retry_btn: &Button) {
@@ -110,12 +112,12 @@ fn handle_remove_lock(error_box: &GtkBox, remove_lock_btn: &Button, _retry_btn: 
 
             if let Some((stack, content_box, window)) = get_navigation_stack(error_box) {
                 stack.set_visible_child_name("loading");
-                crate::ui::main_window::load_packages(stack, content_box, window);
+                load_packages(stack, content_box, window);
             }
         }
         Err(error_msg) => {
             if let Some((_, _, window)) = get_navigation_stack(error_box) {
-                crate::ui::dialogs::show_error_dialog(
+                show_error_dialog(
                     window.upcast_ref::<gtk4::Window>(),
                     "Failed to Remove Lock",
                     &error_msg,

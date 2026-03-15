@@ -3,6 +3,7 @@ use gtk4::prelude::*;
 use gtk4::{Box as GtkBox, Button, Image, Label, Orientation};
 
 use crate::helpers::get_navigation_stack::get_navigation_stack;
+use crate::ui::main_window::load_packages;
 
 pub fn create_no_updates_page() -> GtkBox {
     let no_updates_box = GtkBox::new(Orientation::Vertical, 20);
@@ -45,5 +46,5 @@ fn handle_refresh_click(no_updates_box: &GtkBox) {
     };
 
     stack.set_visible_child_name("loading");
-    crate::ui::main_window::load_packages(stack, content_box, window);
+    load_packages(stack, content_box, window);
 }

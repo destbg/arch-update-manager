@@ -4,7 +4,7 @@ use crate::{
     models::{aur_managers::AurManagers, package_update::PackageUpdate},
 };
 use anyhow::{Context, Result};
-use std::process::Command;
+use std::{env, process::Command};
 
 pub fn detect_aur_helper() -> Option<AurManagers> {
     let settings = load_settings();
@@ -163,13 +163,13 @@ pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
 }
 
 fn get_original_user() -> Option<String> {
-    if let Ok(user) = std::env::var("SUDO_USER") {
+    if let Ok(user) = env::var("SUDO_USER") {
         if !user.is_empty() && user != "root" {
             return Some(user);
         }
     }
 
-    if let Ok(uid) = std::env::var("PKEXEC_UID") {
+    if let Ok(uid) = env::var("PKEXEC_UID") {
         if let Ok(uid_num) = uid.parse::<u32>() {
             if uid_num != 0 {
                 if let Ok(output) = Command::new("id").args(&["-un", &uid]).output() {

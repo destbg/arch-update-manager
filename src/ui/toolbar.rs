@@ -8,6 +8,7 @@ use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_sn
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
+use crate::ui::main_window::load_packages;
 use crate::ui::package_list::{save_unselected_from_store, update_statusbar};
 use crate::ui::settings_dialog::show_settings_dialog;
 use gio::ListStore;
@@ -77,7 +78,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
             };
 
             stack.set_visible_child_name("loading");
-            crate::ui::main_window::load_packages(stack, content_box, window);
+            load_packages(stack, content_box, window);
         }
     ));
 
@@ -150,7 +151,8 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
             move |_| {
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
                     let settings = load_settings();
-                    show_settings_dialog(&window, &settings);
+                    let favorites_column = crate::ui::main_window::find_favorites_column(&window);
+                    show_settings_dialog(&window, &settings, favorites_column);
                 }
             }
         ));

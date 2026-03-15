@@ -2,6 +2,7 @@ pub mod aur;
 pub mod database_lock;
 pub mod decorations;
 pub mod get_navigation_stack;
+pub mod installed_packages;
 pub mod package_updates;
 pub mod pacman_repos;
 pub mod settings;
