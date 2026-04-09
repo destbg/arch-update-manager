@@ -87,14 +87,17 @@ jobs:
           REPO_BIN="ssh://aur@aur.archlinux.org/${AUR_BIN}.git"
           sudo -u builder GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" git clone $REPO_BIN aur-bin
 
+      - name: Ensure LF line endings in AUR repos
+        run: |
+          printf '* text=auto eol=lf\n' > aur/.gitattributes
+          printf '* text=auto eol=lf\n' > aur-bin/.gitattributes
+
       - name: Copy PKGBUILD into AUR repo
         run: |
           cp -f PKGBUILD aur/PKGBUILD
-          tr -d '\r' < aur/PKGBUILD > aur/PKGBUILD.tmp && mv aur/PKGBUILD.tmp aur/PKGBUILD
           chown -R builder:builder aur
 
           cp -f PKGBUILD.bin aur-bin/PKGBUILD
-          tr -d '\r' < aur-bin/PKGBUILD > aur-bin/PKGBUILD.tmp && mv aur-bin/PKGBUILD.tmp aur-bin/PKGBUILD
           chown -R builder:builder aur-bin
 
       - name: Update pkgver and pkgrel
@@ -108,15 +111,11 @@ jobs:
       - name: Refresh checksums and .SRCINFO (non-root)
         run: |
           cd aur
-          tr -d '\r' < PKGBUILD > PKGBUILD.tmp && mv PKGBUILD.tmp PKGBUILD
-          chown builder:builder PKGBUILD
           sudo -u builder bash -lc 'updpkgsums'
           sudo -u builder bash -lc 'makepkg --printsrcinfo > .SRCINFO'
           cd ..
 
           cd aur-bin
-          tr -d '\r' < PKGBUILD > PKGBUILD.tmp && mv PKGBUILD.tmp PKGBUILD
-          chown builder:builder PKGBUILD
           sudo -u builder bash -lc 'updpkgsums'
           sudo -u builder bash -lc 'makepkg --printsrcinfo > .SRCINFO'
 
@@ -126,10 +125,9 @@ jobs:
           AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
           AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
         run: |
-          for f in PKGBUILD .SRCINFO; do tr -d '\r' < "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
           sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
           sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
-          sudo -u builder git add PKGBUILD .SRCINFO
+          sudo -u builder git add .gitattributes PKGBUILD .SRCINFO
           if ! sudo -u builder git diff --cached --quiet; then
             sudo -u builder git commit -m "Update to ${PKGVER} (pkgrel=1)"
             sudo -u builder git push
@@ -143,10 +141,9 @@ jobs:
           AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
           AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
         run: |
-          for f in PKGBUILD .SRCINFO; do tr -d '\r' < "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
           sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
           sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
-          sudo -u builder git add PKGBUILD .SRCINFO
+          sudo -u builder git add .gitattributes PKGBUILD .SRCINFO
           if ! sudo -u builder git diff --cached --quiet; then
             sudo -u builder git commit -m "Update to ${PKGVER} (pkgrel=1)"
             sudo -u builder git push
