@@ -108,11 +108,13 @@ jobs:
       - name: Refresh checksums and .SRCINFO (non-root)
         run: |
           cd aur
+          sed -i 's/\r$//' PKGBUILD
           sudo -u builder bash -lc 'updpkgsums'
           sudo -u builder bash -lc 'makepkg --printsrcinfo > .SRCINFO'
           cd ..
 
           cd aur-bin
+          sed -i 's/\r$//' PKGBUILD
           sudo -u builder bash -lc 'updpkgsums'
           sudo -u builder bash -lc 'makepkg --printsrcinfo > .SRCINFO'
 
