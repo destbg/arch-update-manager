@@ -127,7 +127,7 @@ jobs:
         run: |
           sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
           sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
-          sudo -u builder git add .gitattributes PKGBUILD .SRCINFO
+          sudo -u builder git add -f .gitattributes PKGBUILD .SRCINFO
           if ! sudo -u builder git diff --cached --quiet; then
             sudo -u builder git commit -m "Update to ${PKGVER} (pkgrel=1)"
             sudo -u builder git push
@@ -143,7 +143,7 @@ jobs:
         run: |
           sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
           sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
-          sudo -u builder git add .gitattributes PKGBUILD .SRCINFO
+          sudo -u builder git add -f .gitattributes PKGBUILD .SRCINFO
           if ! sudo -u builder git diff --cached --quiet; then
             sudo -u builder git commit -m "Update to ${PKGVER} (pkgrel=1)"
             sudo -u builder git push
