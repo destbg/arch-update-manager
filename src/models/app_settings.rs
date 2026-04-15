@@ -31,6 +31,8 @@ pub struct AppSettings {
     pub separate_repositories: Vec<String>,
     #[serde(default = "default_remember_unselected")]
     pub remember_unselected_packages: bool,
+    #[serde(default = "default_detect_repo_switches")]
+    pub detect_repo_switches: bool,
     #[serde(default = "default_enable_favorites")]
     pub enable_favorites: bool,
     #[serde(default)]
@@ -44,6 +46,10 @@ fn default_remember_unselected() -> bool {
 }
 
 fn default_enable_favorites() -> bool {
+    true
+}
+
+fn default_detect_repo_switches() -> bool {
     true
 }
 

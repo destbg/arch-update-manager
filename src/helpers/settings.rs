@@ -19,6 +19,7 @@ fn default_settings() -> AppSettings {
         separate_repository_groups: false,
         separate_repositories: Vec::new(),
         remember_unselected_packages: true,
+        detect_repo_switches: true,
         enable_favorites: true,
         show_favorites_column: false,
         favorite_packages: Vec::new(),

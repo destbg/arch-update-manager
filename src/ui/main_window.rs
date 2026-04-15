@@ -1,8 +1,10 @@
 use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::package_updates::get_package_updates;
+use crate::helpers::repo_switches::detect_repo_switches;
 use crate::helpers::settings::load_settings;
 use crate::helpers::unselected_packages::load_unselected_packages;
 use crate::models::package_object::PackageUpdateObject;
+use crate::models::repo_switch::RepoSwitch;
 use crate::models::update_error::UpdateError;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::error_page::{create_error_page, update_error_page_message};
@@ -12,7 +14,7 @@ use crate::ui::no_updates::create_no_updates_page;
 use crate::ui::package_list::{create_package_list, update_statusbar};
 use crate::ui::settings_dialog::show_settings_dialog;
 use crate::ui::terminal_page::create_terminal_page;
-use crate::ui::toolbar::create_toolbar;
+use crate::ui::toolbar::{create_toolbar, refresh_review_switches_button};
 use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
@@ -20,6 +22,11 @@ use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn, HeaderBar,
     Orientation, Paned, ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
 };
+use std::cell::RefCell;
+
+thread_local! {
+    pub static REPO_SWITCHES: RefCell<Vec<RepoSwitch>> = RefCell::new(Vec::new());
+}
 
 pub fn build_ui(app: &Application) {
     let window = ApplicationWindow::builder()
@@ -138,6 +145,33 @@ fn create_main_content(decorations_disabled: bool) -> GtkBox {
     return content_box;
 }
 
+pub async fn refresh_switches(window: &ApplicationWindow) {
+    let settings = load_settings();
+    if !settings.detect_repo_switches {
+        REPO_SWITCHES.with(|cell| cell.borrow_mut().clear());
+        refresh_review_switches_button(window.upcast_ref(), 0);
+        return;
+    }
+
+    let result = gio::spawn_blocking(|| detect_repo_switches()).await;
+
+    let switches = match result {
+        Ok(Ok(list)) => list,
+        Ok(Err(e)) => {
+            eprintln!("Failed to detect repo switches: {}", e);
+            Vec::new()
+        }
+        Err(e) => {
+            eprintln!("Repo switch detection thread failed: {:?}", e);
+            Vec::new()
+        }
+    };
+
+    let count = switches.len();
+    REPO_SWITCHES.with(|cell| *cell.borrow_mut() = switches);
+    refresh_review_switches_button(window.upcast_ref(), count);
+}
+
 pub fn find_favorites_column(window: &ApplicationWindow) -> Option<ColumnViewColumn> {
     let main_box = window.child().and_downcast::<GtkBox>()?;
     let stack = main_box.first_child().and_downcast::<Stack>()?;
@@ -233,6 +267,8 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                 }
 
                 stack.set_visible_child_name("content");
+
+                refresh_switches(&window).await;
             }
             Ok(Err(e)) => {
                 if let UpdateError::SyncFailed(ref msg) = e {

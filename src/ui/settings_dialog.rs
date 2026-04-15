@@ -41,6 +41,7 @@ pub fn show_settings_dialog(
     main_container.set_margin_bottom(24);
 
     let (aur_enable_check, aur_combo) = create_aur_group(settings, &main_container);
+    let detect_switches_check = create_repo_switches_group(settings, &main_container);
     let (timeshift_check, retention_count_spin, retention_period_combo) =
         create_timeshift_group(settings, &main_container);
     let (fav_enable_check, fav_show_col_check, manage_btn) =
@@ -54,6 +55,7 @@ pub fn show_settings_dialog(
     let save_all = {
         let aur_enable_check = aur_enable_check.clone();
         let aur_combo = aur_combo.clone();
+        let detect_switches_check = detect_switches_check.clone();
         let timeshift_check = timeshift_check.clone();
         let retention_count_spin = retention_count_spin.clone();
         let retention_period_combo = retention_period_combo.clone();
@@ -88,6 +90,8 @@ pub fn show_settings_dialog(
                     _ => SnapshotRetentionPeriod::Forever,
                 };
             }
+
+            new_settings.detect_repo_switches = detect_switches_check.is_active();
 
             new_settings.enable_favorites = fav_enable_check.is_active();
             new_settings.show_favorites_column = fav_show_col_check.is_active();
@@ -149,6 +153,21 @@ pub fn show_settings_dialog(
 
     let save_all_clone = save_all.clone();
     retention_period_combo.connect_changed(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    let parent_weak = parent.downgrade();
+    detect_switches_check.connect_toggled(move |check| {
+        if !check.is_active() {
+            crate::ui::main_window::REPO_SWITCHES.with(|c| c.borrow_mut().clear());
+            if let Some(window) = parent_weak.upgrade() {
+                crate::ui::toolbar::refresh_review_switches_button(
+                    window.upcast_ref::<gtk4::Window>(),
+                    0,
+                );
+            }
+        }
         save_all_clone();
     });
 
@@ -248,6 +267,25 @@ fn create_aur_group(
     main_container.append(&aur_section);
 
     return (aur_enable_check, aur_combo);
+}
+
+fn create_repo_switches_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "Repository Switches",
+        "Detect when locally-built packages are available in a sync repository, or when a sync package wants to replace an installed one. A review button appears in the toolbar when switches are found.",
+    );
+
+    let detect_switches_check = gtk4::CheckButton::with_label("Detect repository switches");
+    detect_switches_check.add_css_class("settings-check");
+    detect_switches_check.set_active(settings.detect_repo_switches);
+    section.append(&detect_switches_check);
+
+    main_container.append(&section);
+
+    return detect_switches_check;
 }
 
 fn create_timeshift_group(
