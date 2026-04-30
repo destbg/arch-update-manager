@@ -59,7 +59,7 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
                 target_name: name.to_string(),
                 target_repo,
                 target_version,
-                selected: true,
+                selected: false,
             });
         }
     }
@@ -109,7 +109,7 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
                     target_name: sync_pkg.name().to_string(),
                     target_repo: db.name().to_string(),
                     target_version,
-                    selected: true,
+                    selected: false,
                 });
             }
         }
