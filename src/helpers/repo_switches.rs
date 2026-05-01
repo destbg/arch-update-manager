@@ -2,6 +2,8 @@ use alpm::{Alpm, PackageValidation, SigLevel, vercmp};
 use anyhow::{Context, Result};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 
 use crate::constants::AUR_NAME;
 use crate::models::repo_switch::{RepoSwitch, SwitchKind};
@@ -17,6 +19,13 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
             .with_context(|| format!("failed to register syncdb {}", repo.name))?;
     }
 
+    let local_db_dir = PathBuf::from(&pacman_conf.db_path).join("local");
+    let sync_repo_names: Vec<String> = pacman_conf
+        .repos
+        .iter()
+        .map(|r| r.name.clone())
+        .collect();
+
     let local = alpm.localdb();
     let mut switches: Vec<RepoSwitch> = Vec::new();
 
@@ -26,12 +35,16 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
     }
 
     for pkg in local.pkgs() {
-        let is_locally_built = pkg.validation() == PackageValidation::NONE;
-        if !is_locally_built {
+        let name = pkg.name();
+        let version_str = pkg.version().to_string();
+
+        if let Some(installed_db) = read_installed_db(&local_db_dir, name, &version_str) {
+            if sync_repo_names.iter().any(|r| r == &installed_db) {
+                continue;
+            }
+        } else if pkg.validation() != PackageValidation::NONE {
             continue;
         }
-
-        let name = pkg.name();
 
         if is_ignored(&pacman_conf.ignore_pkg, name) {
             continue;
@@ -46,8 +59,7 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
         }
 
         if let Some((target_repo, target_version)) = hit {
-            let installed_version = pkg.version().to_string();
-            if vercmp(target_version.as_str(), installed_version.as_str()) == Ordering::Less {
+            if vercmp(target_version.as_str(), version_str.as_str()) == Ordering::Less {
                 continue;
             }
 
@@ -55,7 +67,7 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
                 kind: SwitchKind::RepoChange,
                 installed_name: name.to_string(),
                 installed_repo: AUR_NAME.to_string(),
-                installed_version,
+                installed_version: version_str.clone(),
                 target_name: name.to_string(),
                 target_repo,
                 target_version,
@@ -120,4 +132,25 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
 
 fn is_ignored(ignore_pkg: &[String], name: &str) -> bool {
     return ignore_pkg.iter().any(|p| p == name);
+}
+
+fn read_installed_db(local_db_dir: &PathBuf, name: &str, version: &str) -> Option<String> {
+    let desc_path = local_db_dir
+        .join(format!("{}-{}", name, version))
+        .join("desc");
+    let content = fs::read_to_string(&desc_path).ok()?;
+    let mut lines = content.lines();
+    while let Some(line) = lines.next() {
+        if line.trim() == "%INSTALLED_DB%" {
+            if let Some(value) = lines.next() {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    return None;
+                }
+                return Some(trimmed.to_string());
+            }
+            return None;
+        }
+    }
+    return None;
 }
