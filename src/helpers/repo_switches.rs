@@ -89,6 +89,10 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
                     continue;
                 };
 
+                if !dep_satisfies(&replaces_dep, installed_version) {
+                    continue;
+                }
+
                 if local.pkg(sync_pkg.name()).is_ok() {
                     continue;
                 }
@@ -132,6 +136,19 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
 
 fn is_ignored(ignore_pkg: &[String], name: &str) -> bool {
     return ignore_pkg.iter().any(|p| p == name);
+}
+
+fn dep_satisfies(dep: &alpm::Dep, installed_version: &str) -> bool {
+    use alpm::DepModVer;
+    let cmp = |v: &alpm::Ver| vercmp(installed_version, v.to_string().as_str());
+    return match dep.depmodver() {
+        DepModVer::Any => true,
+        DepModVer::Eq(v) => cmp(v) == Ordering::Equal,
+        DepModVer::Ge(v) => cmp(v) != Ordering::Less,
+        DepModVer::Le(v) => cmp(v) != Ordering::Greater,
+        DepModVer::Gt(v) => cmp(v) == Ordering::Greater,
+        DepModVer::Lt(v) => cmp(v) == Ordering::Less,
+    };
 }
 
 fn read_installed_db(local_db_dir: &PathBuf, name: &str, version: &str) -> Option<String> {
