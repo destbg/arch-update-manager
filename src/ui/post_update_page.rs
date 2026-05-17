@@ -239,8 +239,9 @@ fn build_all_clear_box() -> GtkBox {
     outer.set_margin_top(24);
     outer.set_margin_bottom(24);
 
-    let icon = Image::from_icon_name("emblem-ok-symbolic");
-    icon.set_pixel_size(48);
+    let icon = Image::from_icon_name("object-select-symbolic");
+    icon.set_pixel_size(64);
+    icon.add_css_class("success");
     outer.append(&icon);
 
     let text_box = GtkBox::new(Orientation::Vertical, 4);
@@ -948,7 +949,7 @@ fn kick_off_service_restart(rows: Rc<RefCell<Vec<ServiceRowState>>>, index: usiz
         clear_box(&row.status_box);
 
         if outcome.success {
-            let icon = Image::from_icon_name("emblem-ok-symbolic");
+            let icon = Image::from_icon_name("object-select-symbolic");
             icon.add_css_class("success");
             row.status_box.append(&icon);
 
