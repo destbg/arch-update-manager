@@ -13,7 +13,7 @@ fn default_settings() -> AppSettings {
     return AppSettings {
         enable_aur_support: false,
         preferred_aur_helper: None,
-        create_timeshift_snapshot: true,
+        create_timeshift_snapshot: is_command_available("timeshift"),
         snapshot_retention_count: 1,
         snapshot_retention_period: SnapshotRetentionPeriod::Forever,
         separate_repository_groups: false,
@@ -23,6 +23,12 @@ fn default_settings() -> AppSettings {
         enable_favorites: true,
         show_favorites_column: false,
         favorite_packages: Vec::new(),
+        enable_flatpak_support: is_command_available("flatpak"),
+        enable_devel_aur: false,
+        keep_old_packages: 3,
+        keep_uninstalled_packages: 0,
+        run_post_update_checks: true,
+        create_snapper_snapshot: false,
     };
 }
 

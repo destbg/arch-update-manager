@@ -7,6 +7,7 @@ pub struct PackageUpdate {
     pub current_version: String,
     pub new_version: String,
     pub size: i64,
+    pub url: Option<String>,
 }
 
 impl Default for PackageUpdate {
@@ -19,6 +20,7 @@ impl Default for PackageUpdate {
             current_version: String::new(),
             new_version: String::new(),
             size: 0,
+            url: None,
         }
     }
 }

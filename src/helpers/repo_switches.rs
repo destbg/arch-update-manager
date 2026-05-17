@@ -20,11 +20,7 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
     }
 
     let local_db_dir = PathBuf::from(&pacman_conf.db_path).join("local");
-    let sync_repo_names: Vec<String> = pacman_conf
-        .repos
-        .iter()
-        .map(|r| r.name.clone())
-        .collect();
+    let sync_repo_names: Vec<String> = pacman_conf.repos.iter().map(|r| r.name.clone()).collect();
 
     let local = alpm.localdb();
     let mut switches: Vec<RepoSwitch> = Vec::new();
@@ -71,7 +67,6 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
                 target_name: name.to_string(),
                 target_repo,
                 target_version,
-                selected: false,
             });
         }
     }
@@ -125,7 +120,6 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
                     target_name: sync_pkg.name().to_string(),
                     target_repo: db.name().to_string(),
                     target_version,
-                    selected: false,
                 });
             }
         }

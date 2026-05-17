@@ -1,5 +1,6 @@
-use crate::constants::{AUR_NAME, TIMESHIFT_COMMENT};
+use crate::constants::{AUR_NAME, FLATPAK_NAME, TIMESHIFT_COMMENT};
 use crate::helpers::aur::install_aur_packages;
+use crate::helpers::flatpak::build_flatpak_update_command;
 use crate::helpers::get_navigation_stack::get_navigation_stack;
 use crate::helpers::pacman_repos::get_repository_groups;
 use crate::helpers::settings::load_settings;
@@ -7,11 +8,9 @@ use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_snapshot};
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
-use crate::models::repo_switch::RepoSwitch;
 use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
-use crate::ui::main_window::{REPO_SWITCHES, load_packages};
+use crate::ui::main_window::load_packages;
 use crate::ui::package_list::{save_unselected_from_store, update_statusbar};
-use crate::ui::repo_switch_dialog::show_repo_switch_dialog;
 use crate::ui::settings_dialog::show_settings_dialog;
 use gio::ListStore;
 use glib::clone;
@@ -103,25 +102,29 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
                     let settings = load_settings();
                     let create_snapshot = settings.create_timeshift_snapshot;
+                    let create_snapper = settings.create_snapper_snapshot
+                        && crate::helpers::snapper::is_snapper_installed()
+                        && !crate::helpers::snapper::is_snap_pac_installed();
 
-                    let confirm_dialog = show_confirm_dialog(
-                        &window,
-                        "Confirm Installation",
-                        &format!(
-                            "Install selected updates?{}",
-                            if create_snapshot {
-                                "\nA Timeshift snapshot will be created."
-                            } else {
-                                ""
-                            }
-                        ),
-                    );
+                    let mut message = String::from("Install selected updates?");
+                    if create_snapshot {
+                        message.push_str("\nA Timeshift snapshot will be created.");
+                    }
+                    if create_snapper {
+                        message.push_str("\nA Snapper snapshot will be created.");
+                    }
+
+                    let confirm_dialog =
+                        show_confirm_dialog(&window, "Confirm Installation", &message);
 
                     confirm_dialog.connect_response(move |dialog, response| {
                         if response == gtk4::ResponseType::Accept {
-                            if let Err(e) =
-                                install_selected_packages_ui(&store, &window, create_snapshot)
-                            {
+                            if let Err(e) = install_selected_packages_ui(
+                                &store,
+                                &window,
+                                create_snapshot,
+                                create_snapper,
+                            ) {
                                 eprintln!("Failed to install packages: {}", e);
                             }
                         }
@@ -133,44 +136,11 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
     ));
     toolbar.append(&install_btn);
 
-    let spacer = GtkBox::new(Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    toolbar.append(&spacer);
-
-    let review_btn = Button::new();
-    review_btn.add_css_class("suggested-action");
-    review_btn.set_widget_name("review-switches-btn");
-    review_btn.set_visible(false);
-    review_btn.set_child(Some(&create_button_content(
-        "dialog-warning-symbolic",
-        "Review Switches",
-    )));
-    review_btn.set_tooltip_text(Some(
-        "Review packages that can be switched to a different repository.",
-    ));
-    review_btn.connect_clicked(clone!(
-        #[weak]
-        toolbar,
-        move |_| {
-            let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() else {
-                return;
-            };
-            let switches = std::rc::Rc::new(std::cell::RefCell::new(
-                REPO_SWITCHES.with(|c| c.borrow().clone()),
-            ));
-            let switches_for_apply = switches.clone();
-            show_repo_switch_dialog(
-                window.upcast_ref::<gtk4::Window>(),
-                switches.clone(),
-                move || {
-                    REPO_SWITCHES.with(|c| *c.borrow_mut() = switches_for_apply.borrow().clone());
-                },
-            );
-        }
-    ));
-    toolbar.append(&review_btn);
-
     if show_settings_button {
+        let spacer = GtkBox::new(Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        toolbar.append(&spacer);
+
         let separator3 = Separator::new(Orientation::Vertical);
         toolbar.append(&separator3);
 
@@ -197,54 +167,6 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
     toolbar_container.append(&toolbar);
 
     return toolbar_container;
-}
-
-pub fn refresh_review_switches_button(window: &gtk4::Window, count: usize) {
-    let Some(btn) = find_review_switches_button(window) else {
-        return;
-    };
-    if count == 0 {
-        btn.set_visible(false);
-        return;
-    }
-    btn.set_visible(true);
-    btn.set_child(Some(&create_button_content(
-        "dialog-warning-symbolic",
-        &format!("Review Switches ({})", count),
-    )));
-}
-
-fn find_review_switches_button(window: &gtk4::Window) -> Option<Button> {
-    let main_box = window.child().and_downcast::<GtkBox>()?;
-    let stack = main_box.first_child().and_downcast::<Stack>()?;
-    let content_box = stack.child_by_name("content").and_downcast::<GtkBox>()?;
-
-    let mut child = content_box.first_child();
-    while let Some(widget) = child {
-        if let Some(container) = widget.downcast_ref::<GtkBox>() {
-            if let Some(found) = find_button_by_name(container, "review-switches-btn") {
-                return Some(found);
-            }
-        }
-        child = widget.next_sibling();
-    }
-    return None;
-}
-
-fn find_button_by_name(container: &GtkBox, name: &str) -> Option<Button> {
-    let mut child = container.first_child();
-    while let Some(widget) = child {
-        if widget.widget_name() == name {
-            return widget.downcast::<Button>().ok();
-        }
-        if let Some(inner) = widget.downcast_ref::<GtkBox>() {
-            if let Some(found) = find_button_by_name(inner, name) {
-                return Some(found);
-            }
-        }
-        child = widget.next_sibling();
-    }
-    return None;
 }
 
 fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Statusbar)> {
@@ -331,9 +253,11 @@ fn install_selected_packages_ui(
     store: &ListStore,
     window: &ApplicationWindow,
     create_snapshot: bool,
+    create_snapper: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut official_packages = Vec::new();
     let mut aur_packages = Vec::new();
+    let mut flatpak_packages = Vec::new();
     let n_items = store.n_items();
 
     for i in 0..n_items {
@@ -342,6 +266,8 @@ fn install_selected_packages_ui(
             if data.selected {
                 if data.repository == AUR_NAME {
                     aur_packages.push(data);
+                } else if data.repository == FLATPAK_NAME {
+                    flatpak_packages.push(data);
                 } else {
                     official_packages.push(data);
                 }
@@ -349,32 +275,7 @@ fn install_selected_packages_ui(
         }
     }
 
-    let selected_switches: Vec<RepoSwitch> = REPO_SWITCHES.with(|c| {
-        c.borrow()
-            .iter()
-            .filter(|s| s.selected)
-            .cloned()
-            .collect()
-    });
-    for switch in &selected_switches {
-        if official_packages
-            .iter()
-            .any(|p| p.name == switch.target_name)
-        {
-            continue;
-        }
-        official_packages.push(PackageUpdate {
-            repository: switch.target_repo.clone(),
-            selected: true,
-            name: switch.target_name.clone(),
-            description: String::new(),
-            current_version: switch.installed_version.clone(),
-            new_version: switch.target_version.clone(),
-            size: 0,
-        });
-    }
-
-    if official_packages.is_empty() && aur_packages.is_empty() {
+    if official_packages.is_empty() && aur_packages.is_empty() && flatpak_packages.is_empty() {
         return Ok(());
     }
 
@@ -389,14 +290,22 @@ fn install_selected_packages_ui(
         execute_timeshift_operations_async(
             official_packages.clone(),
             aur_packages.clone(),
+            flatpak_packages.clone(),
             window.clone(),
             progress_dialog,
+            create_snapper,
         );
 
         return Ok(());
     }
 
-    if let Err(e) = navigate_to_terminal_and_install(window, official_packages, aur_packages) {
+    if let Err(e) = navigate_to_terminal_and_install(
+        window,
+        official_packages,
+        aur_packages,
+        flatpak_packages,
+        create_snapper,
+    ) {
         show_error_dialog(
             &window.upcast_ref::<gtk4::Window>(),
             "Installation Error",
@@ -409,12 +318,15 @@ fn install_selected_packages_ui(
 fn execute_timeshift_operations_async(
     official_packages: Vec<PackageUpdate>,
     aur_packages: Vec<PackageUpdate>,
+    flatpak_packages: Vec<PackageUpdate>,
     window: ApplicationWindow,
     progress_dialog: gtk4::Dialog,
+    create_snapper: bool,
 ) {
     let (tx, rx) = mpsc::channel();
     let official_packages_clone = official_packages.clone();
     let aur_packages_clone = aur_packages.clone();
+    let flatpak_packages_clone = flatpak_packages.clone();
     let settings = load_settings();
 
     thread::spawn(move || match create_timeshift_snapshot(TIMESHIFT_COMMENT) {
@@ -439,6 +351,8 @@ fn execute_timeshift_operations_async(
                 &window,
                 official_packages_clone.clone(),
                 aur_packages_clone.clone(),
+                flatpak_packages_clone.clone(),
+                create_snapper,
             ) {
                 show_error_dialog(
                     &window.upcast_ref::<gtk4::Window>(),
@@ -503,6 +417,8 @@ fn start_installation_in_terminal(
     terminal: &vte4::Terminal,
     official_packages: Vec<PackageUpdate>,
     aur_packages: Vec<PackageUpdate>,
+    flatpak_packages: Vec<PackageUpdate>,
+    create_snapper: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let settings = load_settings();
 
@@ -556,7 +472,7 @@ fn start_installation_in_terminal(
                 .join(" ");
 
             let cmd = format!(
-                r#"expect -c '
+                r#"(expect -c '
 set timeout -1
 log_user 0
 spawn sudo pacman -S {pkgs}
@@ -569,7 +485,10 @@ expect_background {{
 }}
 
 interact
-' ; while [ -e /var/lib/pacman/db.lck ]; do sleep 0.2; done"#,
+'
+expect_status=$?
+while [ -e /var/lib/pacman/db.lck ]; do sleep 0.2; done
+exit $expect_status)"#,
                 pkgs = pkgs_quoted
             );
             parts.push(cmd);
@@ -599,12 +518,29 @@ interact
         None
     };
 
-    let joined = match (pacman_cmd, aur_cmd) {
-        (Some(p), Some(a)) => format!("{p} && {a}"),
-        (Some(p), None) => p,
-        (None, Some(a)) => a,
-        (None, None) => return Ok(()),
+    let flatpak_cmd = if !flatpak_packages.is_empty() {
+        let ids: Vec<String> = flatpak_packages.iter().map(|p| p.name.clone()).collect();
+        build_flatpak_update_command(&ids)
+    } else {
+        None
     };
+
+    let snapper_cmd = if create_snapper {
+        Some(crate::helpers::snapper::build_snapper_snapshot_command())
+    } else {
+        None
+    };
+
+    let parts: Vec<String> = [snapper_cmd, pacman_cmd, aur_cmd, flatpak_cmd]
+        .into_iter()
+        .flatten()
+        .collect();
+
+    if parts.is_empty() {
+        return Ok(());
+    }
+
+    let joined = parts.join(" && ");
 
     spawn_terminal(terminal, vec!["bash", "-lc", &joined]);
 
@@ -615,6 +551,8 @@ fn navigate_to_terminal_and_install(
     window: &ApplicationWindow,
     official_packages: Vec<PackageUpdate>,
     aur_packages: Vec<PackageUpdate>,
+    flatpak_packages: Vec<PackageUpdate>,
+    create_snapper: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(main_box) = window.child().and_downcast::<GtkBox>() else {
         return Err("Could not find main box".into());
@@ -634,7 +572,13 @@ fn navigate_to_terminal_and_install(
 
     stack.set_visible_child_name("terminal");
 
-    start_installation_in_terminal(&terminal, official_packages, aur_packages)?;
+    start_installation_in_terminal(
+        &terminal,
+        official_packages,
+        aur_packages,
+        flatpak_packages,
+        create_snapper,
+    )?;
 
     return Ok(());
 }

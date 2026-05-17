@@ -1,12 +1,16 @@
 pub mod aur;
 pub mod database_lock;
 pub mod decorations;
+pub mod elevated;
+pub mod flatpak;
 pub mod get_navigation_stack;
 pub mod installed_packages;
 pub mod package_updates;
 pub mod pacman_repos;
+pub mod post_update;
 pub mod repo_switches;
 pub mod settings;
+pub mod snapper;
 pub mod terminal;
 pub mod timeshift;
 pub mod unselected_packages;

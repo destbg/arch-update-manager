@@ -5,8 +5,8 @@ mod ui;
 
 use crate::constants::APP_ID;
 use crate::ui::build_ui;
-use gtk4::Application;
 use gtk4::prelude::*;
+use gtk4::{Application, ButtonsType, MessageDialog, MessageType};
 use std::env;
 use std::process::Command;
 
@@ -19,9 +19,39 @@ fn main() {
 
     let app = Application::builder().application_id(APP_ID).build();
 
-    app.connect_activate(build_ui);
+    app.connect_activate(|app| {
+        if !is_running_as_root() {
+            show_not_root_dialog_and_quit(app);
+            return;
+        }
+        build_ui(app);
+    });
 
     app.run();
+}
+
+fn is_running_as_root() -> bool {
+    return unsafe { libc::geteuid() } == 0;
+}
+
+fn show_not_root_dialog_and_quit(app: &Application) {
+    let dialog = MessageDialog::builder()
+        .modal(true)
+        .message_type(MessageType::Error)
+        .buttons(ButtonsType::Ok)
+        .text("Admin rights needed")
+        .secondary_text(
+            "Arch Update Manager needs to run with admin rights. Please launch it from your application menu, or run it with pkexec or sudo.",
+        )
+        .build();
+
+    let app_clone = app.clone();
+    dialog.connect_response(move |dialog, _| {
+        dialog.close();
+        app_clone.quit();
+    });
+
+    dialog.show();
 }
 
 fn apply_system_theme() {

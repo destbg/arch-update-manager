@@ -48,4 +48,14 @@ impl AurManagers {
             AurManagers::PamacCli => vec!["install"],
         };
     }
+
+    pub fn devel_args(&self) -> Vec<&'static str> {
+        return match self {
+            AurManagers::Yay => vec!["--devel"],
+            AurManagers::Paru => vec!["--devel"],
+            AurManagers::Trizen => vec!["--devel"],
+            AurManagers::Pikaur => vec!["--devel"],
+            AurManagers::PamacCli => vec![],
+        };
+    }
 }

@@ -5,12 +5,14 @@ pkgdesc="A Linux Mint inspired GTK4-based update manager for Arch Linux"
 arch=('x86_64')
 url="https://github.com/destbg/arch-update-manager"
 license=('MIT')
-depends=('gtk4' 'vte4' 'polkit' 'pacman' 'timeshift' 'expect')
+depends=('gtk4' 'vte4' 'gtksourceview5' 'polkit' 'pacman' 'pacman-contrib' 'timeshift' 'expect')
 provides=('arch-update-manager')
 conflicts=('arch-update-manager')
 makedepends=('cargo' 'git')
 optdepends=('paru: AUR helper support'
-            'yay: AUR helper support')
+            'yay: AUR helper support'
+            'flatpak: Flatpak package support'
+            'meld: visual diff editor for pacnew files')
 source=("git+$url.git#tag=${pkgver}")
 sha256sums=('SKIP')
 

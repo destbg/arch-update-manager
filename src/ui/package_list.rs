@@ -286,7 +286,7 @@ fn create_size_column(column_view: &ColumnView) {
         let label = list_item.child().and_downcast::<Label>().unwrap();
 
         let size_text = if data.size < 0 {
-            format!("-{}", format_size(data.size.abs() as u64))
+            format!("-{}", format_size(data.size.unsigned_abs()))
         } else {
             format_size(data.size as u64).to_string()
         };

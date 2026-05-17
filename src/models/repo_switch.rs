@@ -13,5 +13,4 @@ pub struct RepoSwitch {
     pub target_name: String,
     pub target_repo: String,
     pub target_version: String,
-    pub selected: bool,
 }

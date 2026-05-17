@@ -39,20 +39,48 @@ pub struct AppSettings {
     pub show_favorites_column: bool,
     #[serde(default)]
     pub favorite_packages: Vec<String>,
+    #[serde(default = "default_enable_flatpak_support")]
+    pub enable_flatpak_support: bool,
+    #[serde(default)]
+    pub enable_devel_aur: bool,
+    #[serde(default = "default_keep_old_packages")]
+    pub keep_old_packages: u32,
+    #[serde(default)]
+    pub keep_uninstalled_packages: u32,
+    #[serde(default = "default_run_post_update_checks")]
+    pub run_post_update_checks: bool,
+    #[serde(default)]
+    pub create_snapper_snapshot: bool,
 }
 
 fn default_remember_unselected() -> bool {
-    true
+    return true;
 }
 
 fn default_enable_favorites() -> bool {
-    true
+    return true;
 }
 
 fn default_detect_repo_switches() -> bool {
-    true
+    return true;
 }
 
 fn default_snapshot_retention_count() -> u32 {
-    1
+    return 1;
+}
+
+fn default_enable_flatpak_support() -> bool {
+    return std::process::Command::new("which")
+        .arg("flatpak")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+}
+
+fn default_keep_old_packages() -> u32 {
+    return 3;
+}
+
+fn default_run_post_update_checks() -> bool {
+    return true;
 }

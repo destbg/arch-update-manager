@@ -7,6 +7,7 @@ use std::process::Command;
 use std::{error, fmt};
 
 use crate::helpers::aur::get_aur_updates;
+use crate::helpers::flatpak::get_flatpak_updates;
 use crate::helpers::settings::load_settings;
 use crate::models::package_info::PackageInfo;
 use crate::models::package_update::PackageUpdate;
@@ -101,15 +102,20 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
         let installed_sizes_map = get_batch_installed_sizes(&package_names)?;
 
         for (package_name, current_version, new_version) in package_updates {
-            let (description, repository) = if let Some(info) = package_info_map.get(&package_name)
-            {
-                (info.description.clone(), info.repository.clone())
-            } else {
-                (
-                    "No description available".to_string(),
-                    "Unknown".to_string(),
-                )
-            };
+            let (description, repository, url) =
+                if let Some(info) = package_info_map.get(&package_name) {
+                    (
+                        info.description.clone(),
+                        info.repository.clone(),
+                        info.url.clone(),
+                    )
+                } else {
+                    (
+                        "No description available".to_string(),
+                        "Unknown".to_string(),
+                        None,
+                    )
+                };
 
             let current_size = installed_sizes_map
                 .get(&package_name)
@@ -129,6 +135,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 repository,
                 selected: true,
                 size,
+                url,
             });
         }
     }
@@ -141,6 +148,17 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
             }
             Err(e) => {
                 eprintln!("Warning: Failed to get AUR updates: {}", e);
+            }
+        }
+    }
+
+    if settings.enable_flatpak_support {
+        match get_flatpak_updates() {
+            Ok(mut flatpak_updates) => {
+                updates.append(&mut flatpak_updates);
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to get Flatpak updates: {}", e);
             }
         }
     }
@@ -184,6 +202,7 @@ fn get_batch_repository_info(
     let mut current_package = None;
     let mut current_description = "No description available".to_string();
     let mut current_repository = "Unknown".to_string();
+    let mut current_url: Option<String> = None;
 
     for line in info.lines() {
         let line = line.trim();
@@ -196,12 +215,20 @@ fn get_batch_repository_info(
             if !package_info_map.contains_key(&package_name) {
                 current_package = Some(package_name);
                 current_description = "No description available".to_string();
+                current_url = None;
             } else {
                 current_package = None;
             }
         } else if line.starts_with("Description") {
             if current_package.is_some() {
                 current_description = extract_field_value(line);
+            }
+        } else if line.starts_with("URL") {
+            if current_package.is_some() {
+                let value = extract_field_value(line);
+                if !value.is_empty() && value != "Unknown" && value != "None" {
+                    current_url = Some(value);
+                }
             }
         } else if line.starts_with("Installed Size") {
             if let Some(ref name) = current_package {
@@ -216,8 +243,10 @@ fn get_batch_repository_info(
                     PackageInfo {
                         description: current_description.clone(),
                         repository: current_repository.clone(),
+                        url: current_url.clone(),
                     },
                 );
+                current_url = None;
             }
         }
     }
@@ -229,6 +258,7 @@ fn get_batch_repository_info(
                 PackageInfo {
                     description: current_description,
                     repository: current_repository,
+                    url: current_url,
                 },
             );
         }

@@ -16,45 +16,74 @@ pub fn show_settings_dialog(
     settings: &AppSettings,
     favorites_column: Option<gtk4::ColumnViewColumn>,
 ) {
+    install_settings_css();
+
     let dialog = gtk4::Dialog::builder()
         .title("Settings")
         .transient_for(parent)
         .modal(true)
-        .default_width(440)
-        .default_height(500)
+        .default_width(460)
+        .default_height(560)
         .build();
 
     let content_area = dialog.content_area();
     content_area.set_spacing(0);
     content_area.set_vexpand(true);
 
-    let scrolled_window = gtk4::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk4::PolicyType::Never)
-        .vscrollbar_policy(gtk4::PolicyType::Automatic)
-        .vexpand(true)
-        .build();
+    let stack = gtk4::Stack::new();
+    stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
+    stack.set_vexpand(true);
 
-    let main_container = gtk4::Box::new(gtk4::Orientation::Vertical, 20);
-    main_container.set_margin_start(24);
-    main_container.set_margin_end(24);
-    main_container.set_margin_top(24);
-    main_container.set_margin_bottom(24);
+    let switcher = gtk4::StackSwitcher::new();
+    switcher.set_stack(Some(&stack));
+    switcher.set_halign(gtk4::Align::Fill);
+    switcher.set_hexpand(true);
+    switcher.set_margin_start(16);
+    switcher.set_margin_end(16);
+    switcher.set_margin_top(8);
+    switcher.set_margin_bottom(8);
 
-    let (aur_enable_check, aur_combo) = create_aur_group(settings, &main_container);
-    let detect_switches_check = create_repo_switches_group(settings, &main_container);
+    let general_container = build_tab_container();
     let (timeshift_check, retention_count_spin, retention_period_combo) =
-        create_timeshift_group(settings, &main_container);
-    let (fav_enable_check, fav_show_col_check, manage_btn) =
-        create_favorites_group(settings, &main_container, parent);
-    let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &main_container);
-    let remember_unselected_check = create_remember_unselected_group(settings, &main_container);
+        create_timeshift_group(settings, &general_container);
+    let snapper_check = create_snapper_group(settings, &general_container);
+    let post_update_check = create_post_update_group(settings, &general_container);
+    let remember_unselected_check = create_remember_unselected_group(settings, &general_container);
+    let detect_switches_check = create_repo_switches_group(settings, &general_container);
+    stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
 
-    scrolled_window.set_child(Some(&main_container));
-    content_area.append(&scrolled_window);
+    let packages_container = build_tab_container();
+    let (aur_enable_check, aur_combo, aur_devel_check) =
+        create_aur_group(settings, &packages_container);
+    let flatpak_enable_check = create_flatpak_group(settings, &packages_container);
+    stack.add_titled(&wrap_tab(&packages_container), Some("packages"), "Packages");
+
+    let pacman_container = build_tab_container();
+    let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &pacman_container);
+    let (keep_old_spin, keep_uninstalled_spin) = create_cache_group(settings, &pacman_container);
+    stack.add_titled(&wrap_tab(&pacman_container), Some("pacman"), "Pacman");
+
+    let favorites_container = build_tab_container();
+    let (fav_enable_check, fav_show_col_check, manage_btn) =
+        create_favorites_group(settings, &favorites_container, parent);
+    stack.add_titled(
+        &wrap_tab(&favorites_container),
+        Some("favorites"),
+        "Favorites",
+    );
+
+    content_area.append(&switcher);
+    content_area.append(&stack);
+
+    let switcher_clone = switcher.clone();
+    glib::idle_add_local_once(move || {
+        pad_switcher_buttons(&switcher_clone);
+    });
 
     let save_all = {
         let aur_enable_check = aur_enable_check.clone();
         let aur_combo = aur_combo.clone();
+        let aur_devel_check = aur_devel_check.clone();
         let detect_switches_check = detect_switches_check.clone();
         let timeshift_check = timeshift_check.clone();
         let retention_count_spin = retention_count_spin.clone();
@@ -64,6 +93,11 @@ pub fn show_settings_dialog(
         let separate_repo_check = separate_repo_check.clone();
         let repo_checkboxes = repo_checkboxes.clone();
         let remember_unselected_check = remember_unselected_check.clone();
+        let post_update_check = post_update_check.clone();
+        let flatpak_enable_check = flatpak_enable_check.clone();
+        let keep_old_spin = keep_old_spin.clone();
+        let keep_uninstalled_spin = keep_uninstalled_spin.clone();
+        let snapper_check = snapper_check.clone();
 
         Rc::new(move || {
             let mut new_settings = load_settings();
@@ -77,6 +111,8 @@ pub fn show_settings_dialog(
                     Some(active_id.to_string())
                 };
             }
+
+            new_settings.enable_devel_aur = aur_devel_check.is_active();
 
             new_settings.create_timeshift_snapshot = timeshift_check.is_active();
             new_settings.snapshot_retention_count = retention_count_spin.value() as u32;
@@ -107,6 +143,14 @@ pub fn show_settings_dialog(
             new_settings.separate_repositories = selected_repos;
 
             new_settings.remember_unselected_packages = remember_unselected_check.is_active();
+            new_settings.run_post_update_checks = post_update_check.is_active();
+            new_settings.enable_flatpak_support = flatpak_enable_check.is_active();
+            new_settings.keep_old_packages = keep_old_spin.value() as u32;
+            new_settings.keep_uninstalled_packages = keep_uninstalled_spin.value() as u32;
+            new_settings.create_snapper_snapshot = snapper_check
+                .as_ref()
+                .map(|c| c.is_active())
+                .unwrap_or(false);
 
             if let Err(e) = save_settings(&new_settings) {
                 eprintln!("Failed to save settings: {}", e);
@@ -115,14 +159,22 @@ pub fn show_settings_dialog(
     };
 
     let aur_combo_weak = aur_combo.clone();
+    let aur_devel_check_weak = aur_devel_check.clone();
     let save_all_clone = save_all.clone();
     aur_enable_check.connect_toggled(move |check| {
-        aur_combo_weak.set_sensitive(check.is_active());
+        let is_active = check.is_active();
+        aur_combo_weak.set_sensitive(is_active);
+        aur_devel_check_weak.set_sensitive(is_active);
         save_all_clone();
     });
 
     let save_all_clone = save_all.clone();
     aur_combo.connect_changed(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    aur_devel_check.connect_toggled(move |_| {
         save_all_clone();
     });
 
@@ -157,19 +209,16 @@ pub fn show_settings_dialog(
     });
 
     let save_all_clone = save_all.clone();
-    let parent_weak = parent.downgrade();
-    detect_switches_check.connect_toggled(move |check| {
-        if !check.is_active() {
-            crate::ui::main_window::REPO_SWITCHES.with(|c| c.borrow_mut().clear());
-            if let Some(window) = parent_weak.upgrade() {
-                crate::ui::toolbar::refresh_review_switches_button(
-                    window.upcast_ref::<gtk4::Window>(),
-                    0,
-                );
-            }
-        }
+    detect_switches_check.connect_toggled(move |_| {
         save_all_clone();
     });
+
+    if let Some(snapper) = snapper_check.as_ref() {
+        let save_all_clone = save_all.clone();
+        snapper.connect_toggled(move |_| {
+            save_all_clone();
+        });
+    }
 
     let fav_show_col_check_weak = fav_show_col_check.downgrade();
     let manage_btn_weak = manage_btn.downgrade();
@@ -228,13 +277,33 @@ pub fn show_settings_dialog(
         save_all_clone();
     });
 
+    let save_all_clone = save_all.clone();
+    post_update_check.connect_toggled(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    flatpak_enable_check.connect_toggled(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    keep_old_spin.connect_value_changed(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    keep_uninstalled_spin.connect_value_changed(move |_| {
+        save_all_clone();
+    });
+
     dialog.present();
 }
 
 fn create_aur_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
-) -> (gtk4::CheckButton, gtk4::ComboBoxText) {
+) -> (gtk4::CheckButton, gtk4::ComboBoxText, gtk4::CheckButton) {
     let aur_section = create_preference_group(
         "AUR Package Manager",
         "Enable support for installing packages from the Arch User Repository (AUR).",
@@ -264,9 +333,20 @@ fn create_aur_group(
     aur_combo.set_sensitive(settings.enable_aur_support);
 
     aur_section.append(&aur_combo);
+
+    let devel_check = gtk4::CheckButton::with_label("Check development packages (devel mode)");
+    devel_check.add_css_class("settings-check");
+    devel_check.set_active(settings.enable_devel_aur);
+    devel_check.set_margin_top(12);
+    devel_check.set_sensitive(settings.enable_aur_support);
+    devel_check.set_tooltip_text(Some(
+        "Also check git, svn, and bzr packages for new commits, not just version bumps.",
+    ));
+    aur_section.append(&devel_check);
+
     main_container.append(&aur_section);
 
-    return (aur_enable_check, aur_combo);
+    return (aur_enable_check, aur_combo, devel_check);
 }
 
 fn create_repo_switches_group(
@@ -274,8 +354,8 @@ fn create_repo_switches_group(
     main_container: &gtk4::Box,
 ) -> gtk4::CheckButton {
     let section = create_preference_group(
-        "Repository Switches",
-        "Detect when locally-built packages are available in a sync repository, or when a sync package wants to replace an installed one. A review button appears in the toolbar when switches are found.",
+        "Package Resolutions",
+        "Detect when locally built packages are available in a sync repository, or when a sync package wants to replace an installed one. Detected resolutions are shown on the post-update checks page.",
     );
 
     let detect_switches_check = gtk4::CheckButton::with_label("Detect repository switches");
@@ -394,8 +474,9 @@ fn create_favorites_group(
     show_col_check.set_sensitive(settings.enable_favorites);
     section.append(&show_col_check);
 
-    let manage_btn = gtk4::Button::with_label("Manage Favorite Packages");
+    let manage_btn = build_padded_button("Manage Favorite Packages");
     manage_btn.set_sensitive(settings.enable_favorites);
+    manage_btn.set_halign(gtk4::Align::Start);
     let parent_clone = parent.clone();
     manage_btn.connect_clicked(move |_| {
         favorites_dialog::show_manage_favorites_dialog(parent_clone.upcast_ref::<gtk4::Window>());
@@ -516,6 +597,150 @@ fn create_remember_unselected_group(
     return check;
 }
 
+fn create_post_update_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "Post-Update Checks",
+        "After installing updates, open a checks page that helps with orphan packages, cache cleanup, services that need a restart, and more.",
+    );
+
+    let check = gtk4::CheckButton::with_label("Run checks after install");
+    check.add_css_class("settings-check");
+    check.set_active(settings.run_post_update_checks);
+
+    section.append(&check);
+    main_container.append(&section);
+
+    return check;
+}
+
+fn create_snapper_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+) -> Option<gtk4::CheckButton> {
+    if !crate::helpers::snapper::is_snapper_installed() {
+        return None;
+    }
+
+    let snap_pac_present = crate::helpers::snapper::is_snap_pac_installed();
+
+    let section = create_preference_group(
+        "Snapper Snapshots",
+        "Create a Snapper snapshot before installing updates. This adds a recovery point you can roll back to if an update breaks the system.",
+    );
+
+    let check = gtk4::CheckButton::with_label("Create Snapper snapshot before the update");
+    check.add_css_class("settings-check");
+    check.set_active(settings.create_snapper_snapshot && !snap_pac_present);
+    check.set_sensitive(!snap_pac_present);
+
+    section.append(&check);
+
+    if snap_pac_present {
+        let info = gtk4::Label::new(Some(
+            "The snap-pac package is installed, so Snapper already creates a snapshot automatically before each pacman transaction. No extra setting is needed.",
+        ));
+        info.set_wrap(true);
+        info.set_xalign(0.0);
+        info.set_margin_top(8);
+        info.add_css_class("dim-label");
+        info.add_css_class("caption");
+        section.append(&info);
+    }
+
+    main_container.append(&section);
+
+    return Some(check);
+}
+
+fn create_flatpak_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "Flatpak Packages",
+        "Show updates for Flatpak applications next to system packages.",
+    );
+
+    let flatpak_present = is_flatpak_installed();
+
+    let check = gtk4::CheckButton::with_label("Enable Flatpak support");
+    check.add_css_class("settings-check");
+    check.set_active(settings.enable_flatpak_support && flatpak_present);
+    check.set_sensitive(flatpak_present);
+
+    section.append(&check);
+
+    if !flatpak_present {
+        let warning = gtk4::Label::new(Some(
+            "The flatpak command is not installed on this system. Install the flatpak package to use this feature.",
+        ));
+        warning.set_wrap(true);
+        warning.set_xalign(0.0);
+        warning.set_margin_top(8);
+        warning.add_css_class("dim-label");
+        warning.add_css_class("caption");
+        section.append(&warning);
+    }
+
+    main_container.append(&section);
+
+    return check;
+}
+
+fn create_cache_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+) -> (gtk4::SpinButton, gtk4::SpinButton) {
+    let section = create_preference_group(
+        "Pacman Cache",
+        "Choose how many old and uninstalled package versions to keep in the pacman cache. The cleanup runs from the post-update checks page.",
+    );
+
+    let old_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    old_box.set_hexpand(true);
+
+    let old_label = gtk4::Label::new(Some("Versions of installed packages to keep"));
+    old_label.set_halign(gtk4::Align::Start);
+    old_label.set_hexpand(true);
+    old_box.append(&old_label);
+
+    let old_spin = gtk4::SpinButton::with_range(0.0, 50.0, 1.0);
+    old_spin.set_value(settings.keep_old_packages as f64);
+    old_spin.add_css_class("settings-spin");
+    old_spin.set_halign(gtk4::Align::End);
+    old_box.append(&old_spin);
+
+    section.append(&old_box);
+
+    let uninst_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    uninst_box.set_margin_top(8);
+    uninst_box.set_hexpand(true);
+
+    let uninst_label = gtk4::Label::new(Some("Versions of uninstalled packages to keep"));
+    uninst_label.set_halign(gtk4::Align::Start);
+    uninst_label.set_hexpand(true);
+    uninst_box.append(&uninst_label);
+
+    let uninst_spin = gtk4::SpinButton::with_range(0.0, 50.0, 1.0);
+    uninst_spin.set_value(settings.keep_uninstalled_packages as f64);
+    uninst_spin.add_css_class("settings-spin");
+    uninst_spin.set_halign(gtk4::Align::End);
+    uninst_box.append(&uninst_spin);
+
+    section.append(&uninst_box);
+    main_container.append(&section);
+
+    return (old_spin, uninst_spin);
+}
+
+fn is_flatpak_installed() -> bool {
+    return std::process::Command::new("which")
+        .arg("flatpak")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+}
+
 fn create_preference_group(title: &str, description: &str) -> gtk4::Box {
     let group = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
     group.add_css_class("preference-group");
@@ -535,4 +760,83 @@ fn create_preference_group(title: &str, description: &str) -> gtk4::Box {
     group.append(&desc_label);
 
     return group;
+}
+
+fn build_tab_container() -> gtk4::Box {
+    let container = gtk4::Box::new(gtk4::Orientation::Vertical, 20);
+    container.set_margin_start(24);
+    container.set_margin_end(24);
+    container.set_margin_top(16);
+    container.set_margin_bottom(24);
+    return container;
+}
+
+fn wrap_tab(content: &gtk4::Box) -> gtk4::ScrolledWindow {
+    return gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vexpand(true)
+        .child(content)
+        .build();
+}
+
+fn build_padded_button(label_text: &str) -> gtk4::Button {
+    let button = gtk4::Button::new();
+    let label = gtk4::Label::new(Some(label_text));
+    label.set_margin_start(12);
+    label.set_margin_end(12);
+    button.set_child(Some(&label));
+    return button;
+}
+
+fn install_settings_css() {
+    use std::sync::OnceLock;
+    static CSS_INSTALLED: OnceLock<()> = OnceLock::new();
+
+    CSS_INSTALLED.get_or_init(|| {
+        let Some(display) = gtk4::gdk::Display::default() else {
+            return;
+        };
+
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_data(
+            "stackswitcher button,
+             stackswitcher togglebutton {
+                padding-left: 14px;
+                padding-right: 14px;
+            }",
+        );
+
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_USER,
+        );
+    });
+}
+
+fn pad_switcher_buttons(switcher: &gtk4::StackSwitcher) {
+    let mut child = switcher.first_child();
+    while let Some(widget) = child {
+        let next = widget.next_sibling();
+        widget.set_hexpand(true);
+        widget.set_size_request(110, -1);
+        pad_labels_in_widget(&widget);
+        child = next;
+    }
+}
+
+fn pad_labels_in_widget(widget: &gtk4::Widget) {
+    if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+        label.set_margin_start(14);
+        label.set_margin_end(14);
+        return;
+    }
+
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        let next = c.next_sibling();
+        pad_labels_in_widget(&c);
+        child = next;
+    }
 }

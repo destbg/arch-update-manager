@@ -1,10 +1,11 @@
 use crate::{
     constants::AUR_NAME,
+    helpers::elevated::get_original_user,
     helpers::settings::{get_effective_aur_helper, load_settings},
     models::{aur_managers::AurManagers, package_update::PackageUpdate},
 };
 use anyhow::{Context, Result};
-use std::{env, process::Command};
+use std::process::Command;
 
 pub fn detect_aur_helper() -> Option<AurManagers> {
     let settings = load_settings();
@@ -45,8 +46,14 @@ pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
         return Ok(Vec::new());
     };
 
+    let settings = load_settings();
+    let mut args = helper.update_check_args();
+    if settings.enable_devel_aur {
+        args.extend(helper.devel_args());
+    }
+
     let output = Command::new(helper.command())
-        .args(helper.update_check_args())
+        .args(&args)
         .output()
         .context(format!(
             "Failed to run {} for AUR updates",
@@ -66,6 +73,39 @@ pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     return parse_aur_updates(&stdout, &helper);
+}
+
+pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
+    let Some(helper) = detect_aur_helper() else {
+        return Err(anyhow::anyhow!("No AUR helper available for installation"));
+    };
+
+    let settings = load_settings();
+    let mut args = helper.install_args().to_vec();
+    if settings.enable_devel_aur {
+        args.extend(helper.devel_args());
+    }
+
+    for package in &packages {
+        args.push(package);
+    }
+
+    let original_user = get_original_user();
+
+    if let Some(user) = original_user {
+        let mut command_parts = vec![
+            "sudo".to_string(),
+            "-u".to_string(),
+            user,
+            helper.command().to_string(),
+        ];
+        command_parts.extend(args.into_iter().map(|s| s.to_string()));
+        return Ok(command_parts);
+    } else {
+        let mut command_parts = vec![helper.command().to_string()];
+        command_parts.extend(args.into_iter().map(|s| s.to_string()));
+        return Ok(command_parts);
+    }
 }
 
 fn parse_aur_updates(output: &str, helper: &AurManagers) -> Result<Vec<PackageUpdate>> {
@@ -105,6 +145,10 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
             current_version,
             new_version,
             size: 0,
+            url: Some(format!(
+                "https://aur.archlinux.org/packages/{}",
+                package_name
+            )),
         }));
     }
 
@@ -127,74 +171,12 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
             current_version,
             new_version,
             size: 0,
+            url: Some(format!(
+                "https://aur.archlinux.org/packages/{}",
+                package_name
+            )),
         }));
     }
 
     return Ok(None);
-}
-
-pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
-    let Some(helper) = detect_aur_helper() else {
-        return Err(anyhow::anyhow!("No AUR helper available for installation"));
-    };
-
-    let mut args = helper.install_args().to_vec();
-
-    for package in &packages {
-        args.push(package);
-    }
-
-    let original_user = get_original_user();
-
-    if let Some(user) = original_user {
-        let mut command_parts = vec![
-            "sudo".to_string(),
-            "-u".to_string(),
-            user,
-            helper.command().to_string(),
-        ];
-        command_parts.extend(args.into_iter().map(|s| s.to_string()));
-        return Ok(command_parts);
-    } else {
-        let mut command_parts = vec![helper.command().to_string()];
-        command_parts.extend(args.into_iter().map(|s| s.to_string()));
-        return Ok(command_parts);
-    }
-}
-
-fn get_original_user() -> Option<String> {
-    if let Ok(user) = env::var("SUDO_USER") {
-        if !user.is_empty() && user != "root" {
-            return Some(user);
-        }
-    }
-
-    if let Ok(uid) = env::var("PKEXEC_UID") {
-        if let Ok(uid_num) = uid.parse::<u32>() {
-            if uid_num != 0 {
-                if let Ok(output) = Command::new("id").args(&["-un", &uid]).output() {
-                    let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if !username.is_empty() {
-                        return Some(username);
-                    }
-                }
-            }
-        }
-    }
-
-    if let Ok(output) = Command::new("who").output() {
-        if let Ok(who_output) = String::from_utf8(output.stdout) {
-            for line in who_output.lines() {
-                if line.contains(":0") || line.contains("tty") {
-                    if let Some(username) = line.split_whitespace().next() {
-                        if username != "root" {
-                            return Some(username.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    return None;
 }
