@@ -487,7 +487,12 @@ expect_background {{
     }}
 }}
 
-interact
+interact {{
+    eof {{ return }}
+}}
+catch wait result
+set exit_code [lindex $result 3]
+exit $exit_code
 '
 expect_status=$?
 while [ -e /var/lib/pacman/db.lck ]; do sleep 0.2; done

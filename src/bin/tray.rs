@@ -268,9 +268,13 @@ fn main() {
             reload_settings();
             let new_state = read_state(&path_clone);
 
-            let (changed, prev_last_check) = {
+            let (changed, prev_last_check, prev_total) = {
                 let prev = last_seen_clone.lock().unwrap();
-                (!same_state(&prev, &new_state), prev.last_check)
+                (
+                    !same_state(&prev, &new_state),
+                    prev.last_check,
+                    prev.total(),
+                )
             };
 
             *last_seen_clone.lock().unwrap() = new_state.clone();
@@ -286,6 +290,7 @@ fn main() {
                 };
 
                 if is_new_check
+                    && prev_total == 0
                     && new_state.total() > 0
                     && load_settings().show_update_notifications
                 {
