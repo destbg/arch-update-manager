@@ -20,7 +20,12 @@ pacmanconf = "3.1.0"
 libc = "0.2.186"
 sourceview5 = "0.11.0"
 similar = "3.1.0"
-ksni = { version = "0.3.4", default-features = false, features = ["blocking", "async-io"] }
+ksni = { version = "0.3.4", default-features = false, features = [
+    "blocking",
+    "async-io",
+] }
+signal-hook = "0.4.4"
+notify-rust = "4.17.0"
 
 [[bin]]
 name = "arch-update-manager"

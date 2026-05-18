@@ -111,6 +111,9 @@ pub fn create_terminal_page() -> GtkBox {
         move |_| {
             let exit = *last_exit_btn.lock().unwrap();
             let settings = load_settings();
+            if exit == 0 {
+                crate::helpers::tray_integration::trigger_check_service();
+            }
             if exit == 0 && settings.run_post_update_checks {
                 go_to_post_update(&main_box);
             } else {

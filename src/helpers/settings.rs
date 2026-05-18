@@ -29,6 +29,7 @@ fn default_settings() -> AppSettings {
         run_post_update_checks: true,
         create_snapper_snapshot: false,
         enable_system_tray: false,
+        tray_always_visible: false,
         show_update_notifications: false,
         show_package_descriptions: true,
     };
@@ -47,6 +48,18 @@ pub fn load_settings() -> AppSettings {
     });
 
     return cache.lock().unwrap().clone();
+}
+
+pub fn reload_settings() -> AppSettings {
+    let fresh = load_from_file().unwrap_or_else(|e| {
+        eprintln!("Failed to reload settings: {}, using defaults", e);
+        default_settings()
+    });
+    let cache = SETTINGS_CACHE.get_or_init(|| Mutex::new(fresh.clone()));
+    if let Ok(mut cached) = cache.lock() {
+        *cached = fresh.clone();
+    }
+    return fresh;
 }
 
 pub fn save_settings(settings: &AppSettings) -> Result<()> {

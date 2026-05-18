@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -7,11 +8,13 @@ use chrono::{DateTime, Local};
 use ksni::blocking::TrayMethods;
 use ksni::menu::{StandardItem, SubMenu};
 use ksni::{MenuItem, Status, ToolTip, Tray};
+use signal_hook::consts::SIGUSR1;
+use signal_hook::iterator::Signals;
 
-use arch_update_manager::helpers::settings::load_settings;
+use arch_update_manager::helpers::settings::{load_settings, reload_settings};
 use arch_update_manager::models::tray_state::{TrayState, state_file};
 
-const POLL_INTERVAL: Duration = Duration::from_secs(15);
+const FALLBACK_POLL_INTERVAL: Duration = Duration::from_secs(300);
 const ICON_NO_UPDATES: &str = "arch-update-manager";
 const ICON_UPDATES_AVAILABLE: &str = "software-update-available-symbolic";
 
@@ -56,10 +59,13 @@ impl Tray for ArchUpdateTray {
     }
 
     fn status(&self) -> Status {
-        if self.state.total() == 0 {
-            return Status::Passive;
+        if self.state.total() > 0 {
+            return Status::Active;
         }
-        return Status::Active;
+        if load_settings().tray_always_visible {
+            return Status::Active;
+        }
+        return Status::Passive;
     }
 
     fn tool_tip(&self) -> ToolTip {
@@ -233,9 +239,33 @@ fn main() {
     let path_clone = path.clone();
     let last_seen_clone = Arc::clone(&last_seen);
 
+    let (tx, rx) = mpsc::channel::<()>();
+
+    let tx_signal = tx.clone();
+    thread::spawn(move || {
+        let mut signals = match Signals::new([SIGUSR1]) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Failed to install SIGUSR1 handler: {}", e);
+                return;
+            }
+        };
+        for _ in signals.forever() {
+            let _ = tx_signal.send(());
+        }
+    });
+
+    let tx_poll = tx.clone();
     thread::spawn(move || {
         loop {
-            thread::sleep(POLL_INTERVAL);
+            thread::sleep(FALLBACK_POLL_INTERVAL);
+            let _ = tx_poll.send(());
+        }
+    });
+
+    thread::spawn(move || {
+        while rx.recv().is_ok() {
+            reload_settings();
             let new_state = read_state(&path_clone);
 
             let (changed, prev_last_check) = {
@@ -243,12 +273,12 @@ fn main() {
                 (!same_state(&prev, &new_state), prev.last_check)
             };
 
-            if changed {
-                *last_seen_clone.lock().unwrap() = new_state.clone();
-                handle.update(|t: &mut ArchUpdateTray| {
-                    t.state = new_state.clone();
-                });
+            *last_seen_clone.lock().unwrap() = new_state.clone();
+            handle.update(|t: &mut ArchUpdateTray| {
+                t.state = new_state.clone();
+            });
 
+            if changed {
                 let is_new_check = match (prev_last_check, new_state.last_check) {
                     (Some(prev), Some(curr)) => curr > prev,
                     (None, Some(_)) => true,
@@ -282,12 +312,24 @@ fn fire_notification(count: usize) {
         1 => "1 update available".to_string(),
         n => format!("{} updates available", n),
     };
-    let _ = std::process::Command::new("notify-send")
-        .args([
-            "--app-name=Arch Update Manager",
-            "--icon=arch-update-manager",
-            "Arch Updates Available",
-            &body,
-        ])
-        .status();
+
+    thread::spawn(move || {
+        let result = notify_rust::Notification::new()
+            .summary("Arch Updates Available")
+            .body(&body)
+            .icon("arch-update-manager")
+            .appname("Arch Update Manager")
+            .action("default", "Open")
+            .action("open", "Open Update Manager")
+            .show();
+
+        match result {
+            Ok(handle) => handle.wait_for_action(|action| {
+                if action == "default" || action == "open" {
+                    ArchUpdateTray::launch_main_app();
+                }
+            }),
+            Err(e) => eprintln!("Failed to show notification: {}", e),
+        }
+    });
 }

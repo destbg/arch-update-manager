@@ -65,6 +65,14 @@ fn main() {
         eprintln!("Failed to write state file: {}", e);
         std::process::exit(1);
     }
+
+    signal_tray();
+}
+
+fn signal_tray() {
+    let _ = Command::new("pkill")
+        .args(["-USR1", "-f", "arch-update-manager-tray"])
+        .status();
 }
 
 fn line_starts_with_any(line: &str, names: &[String]) -> bool {

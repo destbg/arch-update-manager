@@ -153,9 +153,8 @@ fn create_main_content(
                 if is_flatpak {
                     ignore_button.set_visible(false);
                 } else {
-                    let is_ignored = crate::helpers::pacman_ignore::is_in_managed_ignore_pkg(
-                        &package_data.name,
-                    );
+                    let is_ignored =
+                        crate::helpers::pacman_ignore::is_in_managed_ignore_pkg(&package_data.name);
                     if let Some(handler_id) = ignore_handler_id.borrow().as_ref() {
                         ignore_button.block_signal(handler_id);
                         ignore_button.set_active(is_ignored);

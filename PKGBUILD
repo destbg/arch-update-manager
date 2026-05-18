@@ -46,6 +46,8 @@ package() {
 		"$pkgdir/usr/lib/systemd/user/$pkgname-check.service"
 	install -Dm644 "res/systemd/$pkgname-check.timer" \
 		"$pkgdir/usr/lib/systemd/user/$pkgname-check.timer"
+	install -Dm644 "res/systemd/$pkgname-tray.service" \
+		"$pkgdir/usr/lib/systemd/user/$pkgname-tray.service"
 	
 	for size in 48x48 256x256 512x512; do
 		if [ -f "icons/$size/apps/$pkgname.png" ]; then

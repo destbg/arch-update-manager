@@ -52,7 +52,8 @@ pub fn show_settings_dialog(
     let general_container = build_tab_container();
     let snapshot_group = create_snapshot_group(settings, &general_container);
     let remember_unselected_check = create_remember_unselected_group(settings, &general_container);
-    let (system_tray_check, notify_check) = create_system_tray_group(settings, &general_container);
+    let (system_tray_check, always_visible_check, notify_check) =
+        create_system_tray_group(settings, &general_container);
     stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
 
     let packages_container = build_tab_container();
@@ -104,6 +105,7 @@ pub fn show_settings_dialog(
         let keep_old_spin = keep_old_spin.clone();
         let keep_uninstalled_spin = keep_uninstalled_spin.clone();
         let system_tray_check = system_tray_check.clone();
+        let always_visible_check = always_visible_check.clone();
         let notify_check = notify_check.clone();
         let show_desc_check = show_desc_check.clone();
 
@@ -160,6 +162,8 @@ pub fn show_settings_dialog(
             new_settings.keep_old_packages = keep_old_spin.value() as u32;
             new_settings.keep_uninstalled_packages = keep_uninstalled_spin.value() as u32;
             new_settings.enable_system_tray = system_tray_check.is_active();
+            new_settings.tray_always_visible =
+                system_tray_check.is_active() && always_visible_check.is_active();
             new_settings.show_update_notifications =
                 system_tray_check.is_active() && notify_check.is_active();
             new_settings.show_package_descriptions = show_desc_check.is_active();
@@ -271,8 +275,10 @@ pub fn show_settings_dialog(
 
     let save_all_clone = save_all.clone();
     let notify_check_weak = notify_check.clone();
+    let always_visible_check_weak = always_visible_check.clone();
     system_tray_check.connect_toggled(move |check| {
         notify_check_weak.set_sensitive(check.is_active());
+        always_visible_check_weak.set_sensitive(check.is_active());
         save_all_clone();
         apply_tray_state(check.is_active());
     });
@@ -280,6 +286,12 @@ pub fn show_settings_dialog(
     let save_all_clone = save_all.clone();
     notify_check.connect_toggled(move |_| {
         save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    always_visible_check.connect_toggled(move |_| {
+        save_all_clone();
+        crate::helpers::tray_integration::kick_tray();
     });
 
     let save_all_clone = save_all.clone();
@@ -368,29 +380,53 @@ fn create_show_descriptions_group(
 fn create_system_tray_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
-) -> (gtk4::CheckButton, gtk4::CheckButton) {
+) -> (gtk4::CheckButton, gtk4::CheckButton, gtk4::CheckButton) {
+    let systemd_available = crate::helpers::tray_integration::has_systemd_user_session();
+
     let section = create_preference_group(
         "System Tray",
-        "Show a system tray icon that displays the number of pending updates.",
+        "Show a system tray icon that displays the number of pending updates. Runs as a user-level systemd service that starts at login.",
     );
 
     let check = gtk4::CheckButton::with_label("Show system tray icon");
     check.add_css_class("settings-check");
-    check.set_active(settings.enable_system_tray);
+    check.set_active(settings.enable_system_tray && systemd_available);
+    check.set_sensitive(systemd_available);
     section.append(&check);
+
+    let always_visible_check =
+        gtk4::CheckButton::with_label("Always show tray icon (even when system is up to date)");
+    always_visible_check.add_css_class("settings-check");
+    always_visible_check.set_active(settings.tray_always_visible && systemd_available);
+    always_visible_check.set_sensitive(systemd_available && settings.enable_system_tray);
+    always_visible_check.set_margin_top(8);
+    always_visible_check.set_margin_start(24);
+    section.append(&always_visible_check);
 
     let notify_check =
         gtk4::CheckButton::with_label("Show desktop notification when updates are available");
     notify_check.add_css_class("settings-check");
-    notify_check.set_active(settings.show_update_notifications);
-    notify_check.set_sensitive(settings.enable_system_tray);
+    notify_check.set_active(settings.show_update_notifications && systemd_available);
+    notify_check.set_sensitive(systemd_available && settings.enable_system_tray);
     notify_check.set_margin_top(8);
     notify_check.set_margin_start(24);
     section.append(&notify_check);
 
+    if !systemd_available {
+        let warning = gtk4::Label::new(Some(
+            "A systemd user session is required to use the tray. This system does not appear to have one available.",
+        ));
+        warning.set_wrap(true);
+        warning.set_xalign(0.0);
+        warning.set_margin_top(8);
+        warning.add_css_class("dim-label");
+        warning.add_css_class("caption");
+        section.append(&warning);
+    }
+
     main_container.append(&section);
 
-    return (check, notify_check);
+    return (check, always_visible_check, notify_check);
 }
 
 fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> SnapshotGroup {

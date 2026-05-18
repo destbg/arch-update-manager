@@ -2,54 +2,50 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::helpers::elevated::{get_original_user, spawn_as_user_or_root};
+use crate::helpers::elevated::get_original_user;
 
-const AUTOSTART_FILENAME: &str = "arch-update-manager-tray.desktop";
+const LEGACY_AUTOSTART_FILENAME: &str = "arch-update-manager-tray.desktop";
 const TIMER_UNIT: &str = "arch-update-manager-check.timer";
 const CHECK_SERVICE: &str = "arch-update-manager-check.service";
-const TRAY_BINARY: &str = "arch-update-manager-tray";
-const TRAY_DESKTOP_CONTENT: &str = "[Desktop Entry]\n\
-Type=Application\n\
-Name=Arch Update Manager Tray\n\
-Comment=System tray applet for Arch Update Manager\n\
-Exec=arch-update-manager-tray\n\
-Icon=arch-update-manager\n\
-Terminal=false\n\
-Categories=System;PackageManager;\n\
-X-GNOME-Autostart-enabled=true\n";
+const TRAY_SERVICE: &str = "arch-update-manager-tray.service";
 
 pub fn trigger_check_service() {
     run_user_systemctl(&["start", CHECK_SERVICE]);
 }
 
+pub fn kick_tray() {
+    let _ = Command::new("pkill")
+        .args(["-USR1", "-f", "arch-update-manager-tray"])
+        .status();
+}
+
 pub fn apply_tray_state(enabled: bool) {
+    remove_legacy_autostart_file();
+
     if enabled {
-        enable_tray();
+        run_user_systemctl(&["enable", "--now", TIMER_UNIT]);
+        run_user_systemctl(&["enable", "--now", TRAY_SERVICE]);
     } else {
-        disable_tray();
+        run_user_systemctl(&["disable", "--now", TIMER_UNIT]);
+        run_user_systemctl(&["disable", "--now", TRAY_SERVICE]);
     }
 }
 
-fn enable_tray() {
-    if let Err(e) = write_autostart_file() {
-        eprintln!("Failed to write autostart entry: {}", e);
-    }
-
-    run_user_systemctl(&["enable", "--now", TIMER_UNIT]);
-
-    if !is_tray_running() {
-        spawn_as_user_or_root(TRAY_BINARY, &[]);
-    }
+pub fn has_systemd_user_session() -> bool {
+    let Some(uid) = original_user_uid() else {
+        return false;
+    };
+    return PathBuf::from(format!("/run/user/{}/systemd", uid)).exists();
 }
 
-fn disable_tray() {
-    if let Err(e) = remove_autostart_file() {
-        eprintln!("Failed to remove autostart entry: {}", e);
+fn remove_legacy_autostart_file() {
+    let Some(dir) = autostart_dir() else {
+        return;
+    };
+    let path = dir.join(LEGACY_AUTOSTART_FILENAME);
+    if path.exists() {
+        let _ = fs::remove_file(&path);
     }
-
-    run_user_systemctl(&["disable", "--now", TIMER_UNIT]);
-
-    kill_running_tray();
 }
 
 fn autostart_dir() -> Option<PathBuf> {
@@ -66,45 +62,10 @@ fn user_home() -> Option<String> {
     return std::env::var("HOME").ok();
 }
 
-fn write_autostart_file() -> std::io::Result<()> {
-    let Some(dir) = autostart_dir() else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Could not determine autostart directory",
-        ));
-    };
-    fs::create_dir_all(&dir)?;
-    let path = dir.join(AUTOSTART_FILENAME);
-    fs::write(&path, TRAY_DESKTOP_CONTENT)?;
-    chown_to_user(&path);
-    if let Some(parent) = path.parent() {
-        chown_to_user(&parent.to_path_buf());
-    }
-    return Ok(());
-}
-
-fn remove_autostart_file() -> std::io::Result<()> {
-    let Some(dir) = autostart_dir() else {
-        return Ok(());
-    };
-    let path = dir.join(AUTOSTART_FILENAME);
-    if path.exists() {
-        fs::remove_file(&path)?;
-    }
-    return Ok(());
-}
-
-fn chown_to_user(path: &PathBuf) {
-    let Some(user) = get_original_user() else {
-        return;
-    };
-    let target = format!("{}:{}", user, user);
-    let _ = Command::new("chown").arg(&target).arg(path).status();
-}
-
 fn run_user_systemctl(args: &[&str]) {
     let Some(user) = get_original_user() else {
-        let _ = Command::new("systemctl").arg("--user").args(args).status();
+        let output = Command::new("systemctl").arg("--user").args(args).output();
+        log_systemctl_result(args, output);
         return;
     };
 
@@ -128,7 +89,37 @@ fn run_user_systemctl(args: &[&str]) {
         sudo_args.push((*arg).to_string());
     }
 
-    let _ = Command::new("sudo").args(&sudo_args).status();
+    let output = Command::new("sudo").args(&sudo_args).output();
+    log_systemctl_result(args, output);
+}
+
+fn log_systemctl_result(args: &[&str], output: std::io::Result<std::process::Output>) {
+    match output {
+        Ok(o) if !o.status.success() => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            eprintln!(
+                "systemctl --user {} failed ({}): {}{}",
+                args.join(" "),
+                o.status,
+                stderr.trim(),
+                if stdout.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!(" / {}", stdout.trim())
+                }
+            );
+        }
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Failed to run systemctl --user {}: {}", args.join(" "), e);
+        }
+    }
+}
+
+fn original_user_uid() -> Option<String> {
+    let user = get_original_user()?;
+    return user_uid(&user);
 }
 
 fn user_uid(user: &str) -> Option<String> {
@@ -139,27 +130,4 @@ fn user_uid(user: &str) -> Option<String> {
         return None;
     }
     return Some(uid);
-}
-
-fn is_tray_running() -> bool {
-    let Some(user) = get_original_user() else {
-        return false;
-    };
-    let output = Command::new("pgrep")
-        .args(["-u", &user, "-f", TRAY_BINARY])
-        .output();
-    match output {
-        Ok(o) => o.status.success(),
-        Err(_) => false,
-    }
-}
-
-fn kill_running_tray() {
-    let Some(user) = get_original_user() else {
-        let _ = Command::new("pkill").args(["-f", TRAY_BINARY]).status();
-        return;
-    };
-    let _ = Command::new("pkill")
-        .args(["-u", &user, "-f", TRAY_BINARY])
-        .status();
 }
