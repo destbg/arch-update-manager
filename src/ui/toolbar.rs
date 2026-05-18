@@ -477,21 +477,19 @@ fn start_installation_in_terminal(
             let cmd = format!(
                 r#"(expect -c '
 set timeout -1
-log_user 0
 spawn sudo pacman -S {pkgs}
-log_user 1
-
-expect_background {{
+expect {{
     -re {{Proceed with installation\? \[Y/n\]}} {{
         send -- "y\r"
+        exp_continue
     }}
-}}
-
-interact {{
-    eof {{ return }}
+    eof
 }}
 catch wait result
 set exit_code [lindex $result 3]
+if {{$exit_code eq ""}} {{
+    set exit_code 1
+}}
 exit $exit_code
 '
 expect_status=$?
