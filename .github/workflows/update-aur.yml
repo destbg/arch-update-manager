@@ -31,7 +31,7 @@ jobs:
 
       - name: Derive version from tag
         run: |
-          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          TAG="2.0.0"
           VER="${TAG#refs/tags/}"; VER="${VER#v}"
           echo "PKGVER=$VER" >> $GITHUB_ENV
           echo "GHTAG=$TAG" >> $GITHUB_ENV
