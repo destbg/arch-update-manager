@@ -2,7 +2,9 @@ use crate::{
     constants::AUR_NAME,
     helpers::elevated::get_original_user,
     helpers::settings::{get_effective_aur_helper, load_settings},
-    models::{aur_managers::AurManagers, package_update::PackageUpdate},
+    models::{
+        aur_managers::AurManagers, package_update::PackageUpdate, shelly_update::ShellyUpdate,
+    },
 };
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -21,6 +23,7 @@ pub fn detect_aur_helper() -> Option<AurManagers> {
         AurManagers::Paru,
         AurManagers::Trizen,
         AurManagers::Pikaur,
+        AurManagers::Shelly,
         AurManagers::PamacCli,
     ];
 
@@ -29,6 +32,9 @@ pub fn detect_aur_helper() -> Option<AurManagers> {
             continue;
         }
         if matches!(helper, AurManagers::PamacCli) && !pamac_supports_aur() {
+            continue;
+        }
+        if matches!(helper, AurManagers::Shelly) && !shelly_supports_aur() {
             continue;
         }
         return Some(helper.clone());
@@ -43,6 +49,21 @@ pub fn is_command_available(command: &str) -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false);
+}
+
+pub fn shelly_supports_aur() -> bool {
+    let Ok(output) = Command::new("shelly")
+        .args(["config", "get", "AurEnabled"])
+        .output()
+    else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    return String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .eq_ignore_ascii_case("true");
 }
 
 pub fn pamac_supports_aur() -> bool {
@@ -125,6 +146,10 @@ pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
 }
 
 fn parse_aur_updates(output: &str, helper: &AurManagers) -> Result<Vec<PackageUpdate>> {
+    if matches!(helper, AurManagers::Shelly) {
+        return parse_shelly_updates(output);
+    }
+
     let mut updates = Vec::new();
 
     for line in output.lines() {
@@ -143,6 +168,30 @@ fn parse_aur_updates(output: &str, helper: &AurManagers) -> Result<Vec<PackageUp
     }
 
     return Ok(updates);
+}
+
+fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
+    let trimmed = output.trim_start_matches('\u{FEFF}').trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let entries: Vec<ShellyUpdate> =
+        serde_json::from_str(trimmed).context("Failed to parse shelly aur list-updates JSON")?;
+
+    return Ok(entries
+        .into_iter()
+        .map(|e| PackageUpdate {
+            repository: AUR_NAME.to_string(),
+            selected: true,
+            description: format!("AUR package: {}", e.name),
+            url: Some(format!("https://aur.archlinux.org/packages/{}", e.name)),
+            size: e.size_difference.max(0),
+            current_version: e.current_version,
+            new_version: e.new_version,
+            name: e.name,
+        })
+        .collect());
 }
 
 fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
@@ -174,7 +223,11 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
 fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
     let parts: Vec<&str> = line.split_whitespace().collect();
 
-    if parts.len() >= 3 && is_plausible_package_name(parts[0]) && is_plausible_version(parts[1]) && is_plausible_version(parts[2]) {
+    if parts.len() >= 3
+        && is_plausible_package_name(parts[0])
+        && is_plausible_version(parts[1])
+        && is_plausible_version(parts[2])
+    {
         let package_name = parts[0].to_string();
         let current_version = parts[1].to_string();
         let new_version = parts[2].to_string();
@@ -210,5 +263,9 @@ fn is_plausible_version(s: &str) -> bool {
     if s.is_empty() || s.starts_with('-') {
         return false;
     }
-    return s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false);
+    return s
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false);
 }

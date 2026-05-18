@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use crate::helpers::aur::{is_command_available, pamac_supports_aur};
+use crate::helpers::aur::{is_command_available, pamac_supports_aur, shelly_supports_aur};
 use crate::models::app_settings::AppSettings;
 use crate::models::snapshot_retention_period::SnapshotRetentionPeriod;
 
@@ -64,7 +64,7 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
 }
 
 pub fn get_available_aur_helpers() -> Vec<String> {
-    let helpers = ["yay", "paru", "trizen", "pikaur", "pamac"];
+    let helpers = ["yay", "paru", "trizen", "pikaur", "shelly", "pamac"];
     let mut available = Vec::new();
 
     for helper in &helpers {
@@ -72,6 +72,9 @@ pub fn get_available_aur_helpers() -> Vec<String> {
             continue;
         }
         if *helper == "pamac" && !pamac_supports_aur() {
+            continue;
+        }
+        if *helper == "shelly" && !shelly_supports_aur() {
             continue;
         }
         available.push(helper.to_string());
@@ -91,12 +94,15 @@ pub fn get_effective_aur_helper(settings: &AppSettings) -> Option<String> {
         }
     }
 
-    let helpers = ["yay", "paru", "trizen", "pikaur", "pamac"];
+    let helpers = ["yay", "paru", "trizen", "pikaur", "shelly", "pamac"];
     for helper in &helpers {
         if !is_command_available(helper) {
             continue;
         }
         if *helper == "pamac" && !pamac_supports_aur() {
+            continue;
+        }
+        if *helper == "shelly" && !shelly_supports_aur() {
             continue;
         }
         return Some(helper.to_string());

@@ -5,6 +5,7 @@ pub enum AurManagers {
     Trizen,
     Pikaur,
     PamacCli,
+    Shelly,
 }
 
 impl AurManagers {
@@ -15,6 +16,7 @@ impl AurManagers {
             AurManagers::Trizen => "trizen",
             AurManagers::Pikaur => "pikaur",
             AurManagers::PamacCli => "pamac",
+            AurManagers::Shelly => "shelly",
         };
     }
 
@@ -25,6 +27,7 @@ impl AurManagers {
             "trizen" => Some(AurManagers::Trizen),
             "pikaur" => Some(AurManagers::Pikaur),
             "pamac" => Some(AurManagers::PamacCli),
+            "shelly" => Some(AurManagers::Shelly),
             _ => None,
         }
     }
@@ -36,6 +39,7 @@ impl AurManagers {
             AurManagers::Trizen => vec!["-Qua"],
             AurManagers::Pikaur => vec!["-Qua"],
             AurManagers::PamacCli => vec!["list", "-u", "-a"],
+            AurManagers::Shelly => vec!["aur", "list-updates", "--json"],
         };
     }
 
@@ -46,6 +50,7 @@ impl AurManagers {
             AurManagers::Trizen => vec!["-S"],
             AurManagers::Pikaur => vec!["-S"],
             AurManagers::PamacCli => vec!["install"],
+            AurManagers::Shelly => vec!["aur", "update"],
         };
     }
 
@@ -56,6 +61,7 @@ impl AurManagers {
             AurManagers::Trizen => vec!["--devel"],
             AurManagers::Pikaur => vec!["--devel"],
             AurManagers::PamacCli => vec![],
+            AurManagers::Shelly => vec![],
         };
     }
 }
