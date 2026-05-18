@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use crate::helpers::aur::is_command_available;
+use crate::helpers::aur::{is_command_available, pamac_supports_aur};
 use crate::models::app_settings::AppSettings;
 use crate::models::snapshot_retention_period::SnapshotRetentionPeriod;
 
@@ -68,9 +68,13 @@ pub fn get_available_aur_helpers() -> Vec<String> {
     let mut available = Vec::new();
 
     for helper in &helpers {
-        if is_command_available(helper) {
-            available.push(helper.to_string());
+        if !is_command_available(helper) {
+            continue;
         }
+        if *helper == "pamac" && !pamac_supports_aur() {
+            continue;
+        }
+        available.push(helper.to_string());
     }
 
     return available;
@@ -89,9 +93,13 @@ pub fn get_effective_aur_helper(settings: &AppSettings) -> Option<String> {
 
     let helpers = ["yay", "paru", "trizen", "pikaur", "pamac"];
     for helper in &helpers {
-        if is_command_available(helper) {
-            return Some(helper.to_string());
+        if !is_command_available(helper) {
+            continue;
         }
+        if *helper == "pamac" && !pamac_supports_aur() {
+            continue;
+        }
+        return Some(helper.to_string());
     }
 
     return None;

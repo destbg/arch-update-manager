@@ -25,9 +25,13 @@ pub fn detect_aur_helper() -> Option<AurManagers> {
     ];
 
     for helper in &helpers {
-        if is_command_available(helper.command()) {
-            return Some(helper.clone());
+        if !is_command_available(helper.command()) {
+            continue;
         }
+        if matches!(helper, AurManagers::PamacCli) && !pamac_supports_aur() {
+            continue;
+        }
+        return Some(helper.clone());
     }
 
     return None;
@@ -39,6 +43,18 @@ pub fn is_command_available(command: &str) -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false);
+}
+
+pub fn pamac_supports_aur() -> bool {
+    let Ok(output) = Command::new("pamac").args(["list", "--help"]).output() else {
+        return false;
+    };
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    return combined.contains("--aur") || combined.contains(" -a,");
 }
 
 pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
@@ -158,7 +174,7 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
 fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
     let parts: Vec<&str> = line.split_whitespace().collect();
 
-    if parts.len() >= 3 {
+    if parts.len() >= 3 && is_plausible_package_name(parts[0]) && is_plausible_version(parts[1]) && is_plausible_version(parts[2]) {
         let package_name = parts[0].to_string();
         let current_version = parts[1].to_string();
         let new_version = parts[2].to_string();
@@ -179,4 +195,20 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
     }
 
     return Ok(None);
+}
+
+fn is_plausible_package_name(s: &str) -> bool {
+    if s.is_empty() || s.starts_with('-') {
+        return false;
+    }
+    return s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '+' | '.' | '@'));
+}
+
+fn is_plausible_version(s: &str) -> bool {
+    if s.is_empty() || s.starts_with('-') {
+        return false;
+    }
+    return s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false);
 }
