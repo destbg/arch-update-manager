@@ -17,7 +17,7 @@ use glib::clone;
 use gtk4::prelude::*;
 use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, ColumnView, Frame, Image, Orientation, Paned,
-    ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
+    ScrolledWindow, Separator, SingleSelection, SortListModel, Stack, Statusbar,
 };
 use shlex::try_quote as quote;
 use std::collections::HashMap;
@@ -197,6 +197,8 @@ fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Statusbar)> 
 
     let Some(list_store) = selection_model
         .downcast_ref::<SingleSelection>()
+        .and_then(|sm| sm.model())
+        .and_then(|m| m.downcast::<SortListModel>().ok())
         .and_then(|sm| sm.model())
         .and_downcast::<ListStore>()
     else {

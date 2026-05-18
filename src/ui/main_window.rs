@@ -19,7 +19,7 @@ use gio::ListStore;
 use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn, HeaderBar,
-    Orientation, Paned, ScrolledWindow, Separator, SingleSelection, Stack, Statusbar,
+    Orientation, Paned, ScrolledWindow, Separator, SingleSelection, SortListModel, Stack, Statusbar,
 };
 use std::cell::RefCell;
 
@@ -194,9 +194,14 @@ pub fn find_package_store(window: &ApplicationWindow) -> Option<ListStore> {
         .and_downcast::<Paned>()?;
     let scrolled = paned.start_child().and_downcast::<ScrolledWindow>()?;
     let column_view = scrolled.child().and_downcast::<ColumnView>()?;
+    return extract_list_store(&column_view);
+}
+
+fn extract_list_store(column_view: &ColumnView) -> Option<ListStore> {
     let selection_model = column_view.model()?;
     let single = selection_model.downcast_ref::<SingleSelection>()?;
-    return single.model().and_downcast::<ListStore>();
+    let sort_model = single.model()?.downcast::<SortListModel>().ok()?;
+    return sort_model.model().and_downcast::<ListStore>();
 }
 
 pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindow) {
@@ -232,18 +237,7 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                     return;
                 };
 
-                let selection_model = column_view.model();
-                let Some(selection_model) = selection_model else {
-                    eprintln!("Could not find selection model");
-                    return;
-                };
-
-                let list_store = selection_model
-                    .downcast_ref::<SingleSelection>()
-                    .and_then(|sm| sm.model())
-                    .and_downcast::<ListStore>();
-
-                let Some(list_store) = list_store else {
+                let Some(list_store) = extract_list_store(&column_view) else {
                     eprintln!("Could not find list store");
                     return;
                 };

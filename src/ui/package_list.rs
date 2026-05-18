@@ -5,21 +5,23 @@ use gio::ListStore;
 use glib::{clone, format_size};
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, Label, Orientation, SingleSelection,
-    Statusbar, ToggleButton,
+    Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, CustomSorter, Label, Ordering,
+    Orientation, SingleSelection, SortListModel, Statusbar, ToggleButton,
 };
 
 pub fn create_package_list() -> (ColumnView, ListStore, Statusbar) {
     let store = ListStore::new::<PackageUpdateObject>();
     let statusbar = Statusbar::new();
 
-    let selection_model = SingleSelection::new(Some(store.clone()));
-    selection_model.set_autoselect(false);
-    selection_model.set_can_unselect(true);
-
-    let column_view = ColumnView::new(Some(selection_model));
+    let column_view = ColumnView::new(None::<SingleSelection>);
     column_view.set_show_row_separators(true);
     column_view.set_show_column_separators(false);
+
+    let sort_model = SortListModel::new(Some(store.clone()), column_view.sorter());
+    let selection_model = SingleSelection::new(Some(sort_model));
+    selection_model.set_autoselect(false);
+    selection_model.set_can_unselect(true);
+    column_view.set_model(Some(&selection_model));
 
     create_favorite_column(&column_view);
     create_repository_column(&column_view);
@@ -29,6 +31,20 @@ pub fn create_package_list() -> (ColumnView, ListStore, Statusbar) {
     create_size_column(&column_view);
 
     return (column_view, store, statusbar);
+}
+
+fn package_sorter<F>(key: F) -> CustomSorter
+where
+    F: Fn(&PackageUpdateObject, &PackageUpdateObject) -> std::cmp::Ordering + 'static,
+{
+    return CustomSorter::new(move |a, b| {
+        let a = a.downcast_ref::<PackageUpdateObject>();
+        let b = b.downcast_ref::<PackageUpdateObject>();
+        return match (a, b) {
+            (Some(a), Some(b)) => key(a, b).into(),
+            _ => Ordering::Equal,
+        };
+    });
 }
 
 fn create_favorite_column(column_view: &ColumnView) {
@@ -151,6 +167,14 @@ fn create_repository_column(column_view: &ColumnView) {
     });
     let repository_column = ColumnViewColumn::new(Some("Repository"), Some(repository_factory));
     repository_column.set_resizable(true);
+    repository_column.set_sorter(Some(&package_sorter(|a, b| {
+        let a = a.data();
+        let b = b.data();
+        return a
+            .repository
+            .cmp(&b.repository)
+            .then_with(|| a.name.cmp(&b.name));
+    })));
     column_view.append_column(&repository_column);
 }
 
@@ -234,6 +258,9 @@ fn create_name_column(column_view: &ColumnView) {
     });
     let name_column = ColumnViewColumn::new(Some("Name"), Some(name_factory));
     name_column.set_expand(true);
+    name_column.set_sorter(Some(&package_sorter(|a, b| {
+        return a.data().name.cmp(&b.data().name);
+    })));
     column_view.append_column(&name_column);
 }
 
@@ -267,6 +294,9 @@ fn create_version_column(column_view: &ColumnView) {
         new_label.set_text(&data.new_version);
     });
     let version_column = ColumnViewColumn::new(Some("Version"), Some(version_factory));
+    version_column.set_sorter(Some(&package_sorter(|a, b| {
+        return a.data().new_version.cmp(&b.data().new_version);
+    })));
     column_view.append_column(&version_column);
 }
 
@@ -297,6 +327,9 @@ fn create_size_column(column_view: &ColumnView) {
     });
     let size_column = ColumnViewColumn::new(Some("Update Size"), Some(size_factory));
     size_column.set_fixed_width(100);
+    size_column.set_sorter(Some(&package_sorter(|a, b| {
+        return a.data().size.cmp(&b.data().size);
+    })));
     column_view.append_column(&size_column);
 }
 
