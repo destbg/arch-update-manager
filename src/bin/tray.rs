@@ -8,6 +8,7 @@ use ksni::blocking::TrayMethods;
 use ksni::menu::{StandardItem, SubMenu};
 use ksni::{MenuItem, Status, ToolTip, Tray};
 
+use arch_update_manager::helpers::settings::load_settings;
 use arch_update_manager::models::tray_state::{TrayState, state_file};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(15);
@@ -167,7 +168,6 @@ impl Tray for ArchUpdateTray {
         items.push(
             StandardItem {
                 label: "Exit".into(),
-                icon_name: "application-exit".into(),
                 activate: Box::new(|_: &mut Self| std::process::exit(0)),
                 ..Default::default()
             }
@@ -238,9 +238,9 @@ fn main() {
             thread::sleep(POLL_INTERVAL);
             let new_state = read_state(&path_clone);
 
-            let changed = {
+            let (changed, prev_last_check) = {
                 let prev = last_seen_clone.lock().unwrap();
-                !same_state(&prev, &new_state)
+                (!same_state(&prev, &new_state), prev.last_check)
             };
 
             if changed {
@@ -248,6 +248,19 @@ fn main() {
                 handle.update(|t: &mut ArchUpdateTray| {
                     t.state = new_state.clone();
                 });
+
+                let is_new_check = match (prev_last_check, new_state.last_check) {
+                    (Some(prev), Some(curr)) => curr > prev,
+                    (None, Some(_)) => true,
+                    _ => false,
+                };
+
+                if is_new_check
+                    && new_state.total() > 0
+                    && load_settings().show_update_notifications
+                {
+                    fire_notification(new_state.total());
+                }
             }
         }
     });
@@ -262,4 +275,19 @@ fn same_state(a: &TrayState, b: &TrayState) -> bool {
         && a.packages == b.packages
         && a.aur == b.aur
         && a.flatpak == b.flatpak;
+}
+
+fn fire_notification(count: usize) {
+    let body = match count {
+        1 => "1 update available".to_string(),
+        n => format!("{} updates available", n),
+    };
+    let _ = std::process::Command::new("notify-send")
+        .args([
+            "--app-name=Arch Update Manager",
+            "--icon=arch-update-manager",
+            "Arch Updates Available",
+            &body,
+        ])
+        .status();
 }

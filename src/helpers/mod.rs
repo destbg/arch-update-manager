@@ -6,6 +6,7 @@ pub mod flatpak;
 pub mod get_navigation_stack;
 pub mod installed_packages;
 pub mod package_updates;
+pub mod pacman_ignore;
 pub mod pacman_repos;
 pub mod post_update;
 pub mod repo_switches;

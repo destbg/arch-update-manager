@@ -1,3 +1,4 @@
+pub mod blacklist_dialog;
 pub mod dialogs;
 pub mod error_page;
 pub mod favorites_dialog;

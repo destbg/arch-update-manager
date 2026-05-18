@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Separator};
+use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Separator, ToggleButton};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,6 +19,14 @@ pub fn create_info_panel() -> InfoPanel {
     info_label.set_xalign(0.0);
     info_label.set_hexpand(true);
     header.append(&info_label);
+
+    let ignore_button = ToggleButton::new();
+    ignore_button.set_icon_name("action-unavailable-symbolic");
+    ignore_button.set_tooltip_text(Some("Add to pacman IgnorePkg blacklist"));
+    ignore_button.add_css_class("flat");
+    ignore_button.set_halign(Align::End);
+    ignore_button.set_visible(false);
+    header.append(&ignore_button);
 
     let url_button = Button::from_icon_name("web-browser-symbolic");
     url_button.set_tooltip_text(Some("Open homepage"));
@@ -49,6 +57,7 @@ pub fn create_info_panel() -> InfoPanel {
     info_box.append(&scrolled_window);
 
     let current_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let current_package: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
 
     let current_url_clone = current_url.clone();
     url_button.connect_clicked(move |_| {
@@ -57,10 +66,23 @@ pub fn create_info_panel() -> InfoPanel {
         }
     });
 
+    let ignore_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>> = Rc::new(RefCell::new(None));
+
     return InfoPanel {
         container: info_box,
         info_text,
         url_button,
+        ignore_button,
+        ignore_handler_id,
         current_url,
+        current_package,
     };
+}
+
+pub fn update_ignore_button_tooltip(btn: &ToggleButton) {
+    if btn.is_active() {
+        btn.set_tooltip_text(Some("Remove from pacman IgnorePkg blacklist"));
+    } else {
+        btn.set_tooltip_text(Some("Add to pacman IgnorePkg blacklist"));
+    }
 }

@@ -6,6 +6,7 @@ use crate::helpers::elevated::{get_original_user, spawn_as_user_or_root};
 
 const AUTOSTART_FILENAME: &str = "arch-update-manager-tray.desktop";
 const TIMER_UNIT: &str = "arch-update-manager-check.timer";
+const CHECK_SERVICE: &str = "arch-update-manager-check.service";
 const TRAY_BINARY: &str = "arch-update-manager-tray";
 const TRAY_DESKTOP_CONTENT: &str = "[Desktop Entry]\n\
 Type=Application\n\
@@ -16,6 +17,10 @@ Icon=arch-update-manager\n\
 Terminal=false\n\
 Categories=System;PackageManager;\n\
 X-GNOME-Autostart-enabled=true\n";
+
+pub fn trigger_check_service() {
+    run_user_systemctl(&["start", CHECK_SERVICE]);
+}
 
 pub fn apply_tray_state(enabled: bool) {
     if enabled {
@@ -141,7 +146,7 @@ fn is_tray_running() -> bool {
         return false;
     };
     let output = Command::new("pgrep")
-        .args(["-u", &user, "-x", TRAY_BINARY])
+        .args(["-u", &user, "-f", TRAY_BINARY])
         .output();
     match output {
         Ok(o) => o.status.success(),
@@ -151,10 +156,10 @@ fn is_tray_running() -> bool {
 
 fn kill_running_tray() {
     let Some(user) = get_original_user() else {
-        let _ = Command::new("pkill").args(["-x", TRAY_BINARY]).status();
+        let _ = Command::new("pkill").args(["-f", TRAY_BINARY]).status();
         return;
     };
     let _ = Command::new("pkill")
-        .args(["-u", &user, "-x", TRAY_BINARY])
+        .args(["-u", &user, "-f", TRAY_BINARY])
         .status();
 }

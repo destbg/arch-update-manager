@@ -51,6 +51,7 @@ pub fn show_confirm_dialog(
     parent: &ApplicationWindow,
     title: &str,
     message: &str,
+    accept_label: &str,
 ) -> MessageDialog {
     let dialog = MessageDialog::builder()
         .transient_for(parent)
@@ -61,7 +62,7 @@ pub fn show_confirm_dialog(
         .build();
 
     dialog.add_button("Cancel", ResponseType::Cancel);
-    dialog.add_button("Install", ResponseType::Accept);
+    dialog.add_button(accept_label, ResponseType::Accept);
 
     dialog.show();
 

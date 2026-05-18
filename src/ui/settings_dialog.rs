@@ -52,7 +52,7 @@ pub fn show_settings_dialog(
     let general_container = build_tab_container();
     let snapshot_group = create_snapshot_group(settings, &general_container);
     let remember_unselected_check = create_remember_unselected_group(settings, &general_container);
-    let system_tray_check = create_system_tray_group(settings, &general_container);
+    let (system_tray_check, notify_check) = create_system_tray_group(settings, &general_container);
     stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
 
     let packages_container = build_tab_container();
@@ -64,6 +64,7 @@ pub fn show_settings_dialog(
     let pacman_container = build_tab_container();
     let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &pacman_container);
     let (keep_old_spin, keep_uninstalled_spin) = create_cache_group(settings, &pacman_container);
+    create_blacklist_group(&pacman_container, parent);
     stack.add_titled(&wrap_tab(&pacman_container), Some("pacman"), "Pacman");
 
     let interface_container = build_tab_container();
@@ -103,6 +104,7 @@ pub fn show_settings_dialog(
         let keep_old_spin = keep_old_spin.clone();
         let keep_uninstalled_spin = keep_uninstalled_spin.clone();
         let system_tray_check = system_tray_check.clone();
+        let notify_check = notify_check.clone();
         let show_desc_check = show_desc_check.clone();
 
         Rc::new(move || {
@@ -158,6 +160,8 @@ pub fn show_settings_dialog(
             new_settings.keep_old_packages = keep_old_spin.value() as u32;
             new_settings.keep_uninstalled_packages = keep_uninstalled_spin.value() as u32;
             new_settings.enable_system_tray = system_tray_check.is_active();
+            new_settings.show_update_notifications =
+                system_tray_check.is_active() && notify_check.is_active();
             new_settings.show_package_descriptions = show_desc_check.is_active();
 
             if let Err(e) = save_settings(&new_settings) {
@@ -266,9 +270,16 @@ pub fn show_settings_dialog(
     });
 
     let save_all_clone = save_all.clone();
+    let notify_check_weak = notify_check.clone();
     system_tray_check.connect_toggled(move |check| {
+        notify_check_weak.set_sensitive(check.is_active());
         save_all_clone();
         apply_tray_state(check.is_active());
+    });
+
+    let save_all_clone = save_all.clone();
+    notify_check.connect_toggled(move |_| {
+        save_all_clone();
     });
 
     let save_all_clone = save_all.clone();
@@ -357,7 +368,7 @@ fn create_show_descriptions_group(
 fn create_system_tray_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
-) -> gtk4::CheckButton {
+) -> (gtk4::CheckButton, gtk4::CheckButton) {
     let section = create_preference_group(
         "System Tray",
         "Show a system tray icon that displays the number of pending updates.",
@@ -368,9 +379,18 @@ fn create_system_tray_group(
     check.set_active(settings.enable_system_tray);
     section.append(&check);
 
+    let notify_check =
+        gtk4::CheckButton::with_label("Show desktop notification when updates are available");
+    notify_check.add_css_class("settings-check");
+    notify_check.set_active(settings.show_update_notifications);
+    notify_check.set_sensitive(settings.enable_system_tray);
+    notify_check.set_margin_top(8);
+    notify_check.set_margin_start(24);
+    section.append(&notify_check);
+
     main_container.append(&section);
 
-    return check;
+    return (check, notify_check);
 }
 
 fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> SnapshotGroup {
@@ -841,6 +861,25 @@ fn create_cache_group(
     main_container.append(&section);
 
     return (old_spin, uninst_spin);
+}
+
+fn create_blacklist_group(main_container: &gtk4::Box, parent: &ApplicationWindow) {
+    let section = create_preference_group(
+        "Blacklisted Packages",
+        "Manage the packages added to /etc/pacman.conf IgnorePkg. Pacman will skip updates for these packages until they are removed from the list.",
+    );
+
+    let manage_btn = build_padded_button("Manage Blacklisted Packages");
+    manage_btn.set_halign(gtk4::Align::Start);
+    let parent_clone = parent.clone();
+    manage_btn.connect_clicked(move |_| {
+        crate::ui::blacklist_dialog::show_manage_blacklist_dialog(
+            parent_clone.upcast_ref::<gtk4::Window>(),
+        );
+    });
+    section.append(&manage_btn);
+
+    main_container.append(&section);
 }
 
 fn is_flatpak_installed() -> bool {

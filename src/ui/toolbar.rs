@@ -115,7 +115,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                     }
 
                     let confirm_dialog =
-                        show_confirm_dialog(&window, "Confirm Installation", &message);
+                        show_confirm_dialog(&window, "Confirm Installation", &message, "Install");
 
                     confirm_dialog.connect_response(move |dialog, response| {
                         if response == gtk4::ResponseType::Accept {

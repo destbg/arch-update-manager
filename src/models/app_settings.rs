@@ -51,6 +51,8 @@ pub struct AppSettings {
     pub create_snapper_snapshot: bool,
     #[serde(default)]
     pub enable_system_tray: bool,
+    #[serde(default)]
+    pub show_update_notifications: bool,
     #[serde(default = "default_show_package_descriptions")]
     pub show_package_descriptions: bool,
 }

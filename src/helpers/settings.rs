@@ -29,6 +29,7 @@ fn default_settings() -> AppSettings {
         run_post_update_checks: true,
         create_snapper_snapshot: false,
         enable_system_tray: false,
+        show_update_notifications: false,
         show_package_descriptions: true,
     };
 }

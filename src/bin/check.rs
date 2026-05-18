@@ -5,21 +5,28 @@ use chrono::Utc;
 
 use arch_update_manager::helpers::aur::get_aur_updates;
 use arch_update_manager::helpers::flatpak::get_flatpak_updates;
+use arch_update_manager::helpers::pacman_ignore::list_managed_ignores;
 use arch_update_manager::helpers::settings::load_settings;
 use arch_update_manager::models::tray_state::{TrayState, state_dir, state_file};
 
 fn main() {
     let settings = load_settings();
+    let blacklist = list_managed_ignores();
 
-    let packages = get_repo_updates().unwrap_or_else(|e| {
-        eprintln!("Failed to get repo updates: {}", e);
-        Vec::new()
-    });
+    let packages: Vec<String> = get_repo_updates()
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to get repo updates: {}", e);
+            Vec::new()
+        })
+        .into_iter()
+        .filter(|line| !line_starts_with_any(line, &blacklist))
+        .collect();
 
     let aur = if settings.enable_aur_support {
         match get_aur_updates() {
             Ok(updates) => updates
                 .into_iter()
+                .filter(|u| !blacklist.contains(&u.name))
                 .map(|u| format!("{} {} -> {}", u.name, u.current_version, u.new_version))
                 .collect(),
             Err(e) => {
@@ -35,6 +42,7 @@ fn main() {
         match get_flatpak_updates() {
             Ok(updates) => updates
                 .into_iter()
+                .filter(|u| !blacklist.contains(&u.name))
                 .map(|u| format!("{} {} -> {}", u.name, u.current_version, u.new_version))
                 .collect(),
             Err(e) => {
@@ -57,6 +65,14 @@ fn main() {
         eprintln!("Failed to write state file: {}", e);
         std::process::exit(1);
     }
+}
+
+fn line_starts_with_any(line: &str, names: &[String]) -> bool {
+    let first = line.split_whitespace().next().unwrap_or("");
+    if first.is_empty() {
+        return false;
+    }
+    return names.iter().any(|n| n == first);
 }
 
 fn get_repo_updates() -> anyhow::Result<Vec<String>> {

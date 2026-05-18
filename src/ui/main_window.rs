@@ -2,12 +2,13 @@ use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::package_updates::get_package_updates;
 use crate::helpers::settings::load_settings;
 use crate::helpers::unselected_packages::load_unselected_packages;
+use crate::models::info_panel::InfoPanel;
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::post_update_page::PostUpdatePage;
 use crate::models::update_error::UpdateError;
-use crate::ui::dialogs::show_error_dialog;
+use crate::ui::dialogs::{show_confirm_dialog, show_error_dialog};
 use crate::ui::error_page::{create_error_page, update_error_page_message};
-use crate::ui::info_panel::create_info_panel;
+use crate::ui::info_panel::{create_info_panel, update_ignore_button_tooltip};
 use crate::ui::loading::create_loading_page;
 use crate::ui::no_updates::create_no_updates_page;
 use crate::ui::package_list::{create_package_list, update_statusbar};
@@ -19,7 +20,8 @@ use gio::ListStore;
 use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn, HeaderBar,
-    Orientation, Paned, ScrolledWindow, Separator, SingleSelection, SortListModel, Stack, Statusbar,
+    Orientation, Paned, ScrolledWindow, Separator, SingleSelection, SortListModel, Stack,
+    Statusbar,
 };
 use std::cell::RefCell;
 
@@ -82,7 +84,7 @@ pub fn build_ui(app: &Application) {
         *cell.borrow_mut() = Some(post_update_page);
     });
 
-    let content_box = create_main_content(decorations_disabled);
+    let content_box = create_main_content(decorations_disabled, &stack, &window);
     stack.add_named(&content_box, Some("content"));
 
     main_box.append(&stack);
@@ -101,7 +103,11 @@ pub fn build_ui(app: &Application) {
     });
 }
 
-fn create_main_content(decorations_disabled: bool) -> GtkBox {
+fn create_main_content(
+    decorations_disabled: bool,
+    stack: &Stack,
+    window: &ApplicationWindow,
+) -> GtkBox {
     let content_box = GtkBox::new(Orientation::Vertical, 0);
 
     let toolbar_container = create_toolbar(decorations_disabled);
@@ -126,24 +132,51 @@ fn create_main_content(decorations_disabled: bool) -> GtkBox {
     let info_panel = create_info_panel();
     paned.set_end_child(Some(&info_panel.container));
 
+    wire_ignore_button(&info_panel, stack, window);
+
     if let Some(selection_model) = list_view.model().and_downcast::<SingleSelection>() {
         let info_text = info_panel.info_text.clone();
         let url_button = info_panel.url_button.clone();
+        let ignore_button = info_panel.ignore_button.clone();
+        let ignore_handler_id = info_panel.ignore_handler_id.clone();
         let current_url = info_panel.current_url.clone();
+        let current_package = info_panel.current_package.clone();
         selection_model.connect_selection_changed(move |model, _position, _n_items| {
             if let Some(package_obj) = model.selected_item().and_downcast::<PackageUpdateObject>() {
                 let package_data = package_obj.data();
                 info_text.set_text(package_data.description.as_str());
                 *current_url.borrow_mut() = package_data.url.clone();
                 url_button.set_visible(package_data.url.is_some());
+
+                *current_package.borrow_mut() = Some(package_data.name.clone());
+                let is_flatpak = package_data.repository == crate::constants::FLATPAK_NAME;
+                if is_flatpak {
+                    ignore_button.set_visible(false);
+                } else {
+                    let is_ignored = crate::helpers::pacman_ignore::is_in_managed_ignore_pkg(
+                        &package_data.name,
+                    );
+                    if let Some(handler_id) = ignore_handler_id.borrow().as_ref() {
+                        ignore_button.block_signal(handler_id);
+                        ignore_button.set_active(is_ignored);
+                        ignore_button.unblock_signal(handler_id);
+                    } else {
+                        ignore_button.set_active(is_ignored);
+                    }
+                    ignore_button.set_visible(true);
+                    crate::ui::info_panel::update_ignore_button_tooltip(&ignore_button);
+                }
             } else {
                 info_text.set_text("Select a package to view its information.");
                 *current_url.borrow_mut() = None;
                 url_button.set_visible(false);
+
+                *current_package.borrow_mut() = None;
+                ignore_button.set_visible(false);
             }
         });
     }
-    paned.set_position(410);
+    paned.set_position(400);
 
     content_box.append(&paned);
 
@@ -151,6 +184,107 @@ fn create_main_content(decorations_disabled: bool) -> GtkBox {
     content_box.append(&statusbar);
 
     return content_box;
+}
+
+fn wire_ignore_button(panel: &InfoPanel, stack: &Stack, window: &ApplicationWindow) {
+    let stack = stack.clone();
+    let window = window.clone();
+    let current_package = panel.current_package.clone();
+    let handler_id_cell = panel.ignore_handler_id.clone();
+    let button = panel.ignore_button.clone();
+
+    let handler_id = button.connect_toggled(move |btn| {
+        let Some(pkg) = current_package.borrow().clone() else {
+            return;
+        };
+        let target_state = btn.is_active();
+
+        let (title, message, accept_label) = if target_state {
+            (
+                "Add to blacklist?",
+                format!(
+                    "Add '{}' to /etc/pacman.conf IgnorePkg? Pacman will skip updates for this package until it is removed from the list.",
+                    pkg
+                ),
+                "Add",
+            )
+        } else {
+            (
+                "Remove from blacklist?",
+                format!(
+                    "Remove '{}' from /etc/pacman.conf IgnorePkg? Pacman will resume updating this package.",
+                    pkg
+                ),
+                "Remove",
+            )
+        };
+
+        let dialog = show_confirm_dialog(&window, title, &message, accept_label);
+
+        let stack_d = stack.clone();
+        let window_d = window.clone();
+        let pkg_d = pkg.clone();
+        let btn_d = btn.clone();
+        let handler_id_cell_d = handler_id_cell.clone();
+        let already_handled = std::rc::Rc::new(std::cell::RefCell::new(false));
+        let handled_clone = already_handled.clone();
+        dialog.connect_response(move |dialog, response| {
+            if *handled_clone.borrow() {
+                return;
+            }
+            *handled_clone.borrow_mut() = true;
+
+            if response == gtk4::ResponseType::Accept {
+                let result = if target_state {
+                    crate::helpers::pacman_ignore::add_to_ignore_pkg(&pkg_d)
+                } else {
+                    crate::helpers::pacman_ignore::remove_from_ignore_pkg(&pkg_d)
+                };
+                match result {
+                    Ok(()) => {
+                        update_ignore_button_tooltip(&btn_d);
+                        crate::helpers::tray_integration::trigger_check_service();
+                        if let Some(content_box) = stack_d
+                            .child_by_name("content")
+                            .and_downcast::<GtkBox>()
+                        {
+                            stack_d.set_visible_child_name("loading");
+                            load_packages(stack_d.clone(), content_box, window_d.clone());
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to update pacman.conf IgnorePkg: {}", e);
+                        show_error_dialog(
+                            window_d.upcast_ref::<gtk4::Window>(),
+                            "Failed to update pacman.conf",
+                            &format!("{}", e),
+                        );
+                        revert_toggle(&btn_d, &handler_id_cell_d, !target_state);
+                    }
+                }
+            } else {
+                revert_toggle(&btn_d, &handler_id_cell_d, !target_state);
+            }
+            dialog.close();
+        });
+    });
+
+    *panel.ignore_handler_id.borrow_mut() = Some(handler_id);
+}
+
+fn revert_toggle(
+    btn: &gtk4::ToggleButton,
+    handler_id_cell: &std::rc::Rc<std::cell::RefCell<Option<glib::SignalHandlerId>>>,
+    target: bool,
+) {
+    if let Some(h) = handler_id_cell.borrow().as_ref() {
+        btn.block_signal(h);
+        btn.set_active(target);
+        btn.unblock_signal(h);
+    } else {
+        btn.set_active(target);
+    }
+    update_ignore_button_tooltip(btn);
 }
 
 fn wire_post_update_back_button(page: &PostUpdatePage, stack: &Stack, window: &ApplicationWindow) {
@@ -209,7 +343,11 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
         let packages_result = gio::spawn_blocking(|| get_package_updates()).await;
 
         match packages_result {
-            Ok(Ok(packages)) => {
+            Ok(Ok(mut packages)) => {
+                let blacklisted = crate::helpers::pacman_ignore::list_managed_ignores();
+                if !blacklisted.is_empty() {
+                    packages.retain(|p| !blacklisted.contains(&p.name));
+                }
                 if packages.is_empty() {
                     stack.set_visible_child_name("no-updates");
                     return;
