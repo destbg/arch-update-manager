@@ -225,6 +225,7 @@ fn create_name_column(column_view: &ColumnView) {
     let name_factory = gtk4::SignalListItemFactory::new();
     name_factory.connect_setup(move |_factory, item| {
         let vbox = GtkBox::new(Orientation::Vertical, 2);
+        vbox.set_valign(gtk4::Align::Center);
         let name_label = Label::new(None);
         name_label.set_xalign(0.0);
         name_label.set_css_classes(&["package-name"]);
