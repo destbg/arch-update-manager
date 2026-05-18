@@ -1,7 +1,6 @@
 name: Build and Update AUR
 
 on:
-  push:
   release:
     types: [published]
 
@@ -31,10 +30,15 @@ jobs:
 
       - name: Derive version from tag
         run: |
-          TAG="2.0.0"
+          TAG="${{ github.event.release.tag_name || github.ref_name }}"
           VER="${TAG#refs/tags/}"; VER="${VER#v}"
           echo "PKGVER=$VER" >> $GITHUB_ENV
           echo "GHTAG=$TAG" >> $GITHUB_ENV
+
+      - name: Set crate version
+        run: |
+          sed -i -E "0,/^version = \".*\"/s//version = \"${PKGVER}\"/" Cargo.toml
+          sed -i -E "/^name = \"arch-update-manager\"$/{n;s/^version = \".*\"$/version = \"${PKGVER}\"/}" Cargo.lock
 
       - name: Build release binaries
         run: |
