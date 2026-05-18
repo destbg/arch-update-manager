@@ -10,7 +10,9 @@ const CHECK_SERVICE: &str = "arch-update-manager-check.service";
 const TRAY_SERVICE: &str = "arch-update-manager-tray.service";
 
 pub fn trigger_check_service() {
-    run_user_systemctl(&["start", CHECK_SERVICE]);
+    std::thread::spawn(|| {
+        run_user_systemctl(&["start", CHECK_SERVICE]);
+    });
 }
 
 pub fn kick_tray() {

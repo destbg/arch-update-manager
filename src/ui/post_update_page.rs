@@ -24,28 +24,30 @@ pub fn create_post_update_page() -> PostUpdatePage {
         .vexpand(true)
         .build();
 
-    let content = GtkBox::new(Orientation::Vertical, 18);
-    content.set_margin_start(24);
-    content.set_margin_end(24);
-    content.set_margin_top(20);
-    content.set_margin_bottom(20);
+    let content = GtkBox::new(Orientation::Vertical, 12);
+    content.set_margin_start(12);
+    content.set_margin_end(12);
+    content.set_margin_top(12);
+    content.set_margin_bottom(12);
+
+    let header_box = GtkBox::new(Orientation::Vertical, 6);
 
     let header_label = Label::new(Some("Post-update checks"));
     header_label.add_css_class("title-2");
-    header_label.set_xalign(0.0);
-    content.append(&header_label);
+    header_label.set_halign(Align::Start);
 
     let header_caption = Label::new(Some(
         "Review and apply any maintenance steps after the install.",
     ));
     header_caption.add_css_class("dim-label");
-    header_caption.set_xalign(0.0);
+    header_caption.set_halign(Align::Start);
     header_caption.set_wrap(true);
-    content.append(&header_caption);
+
+    header_box.append(&header_label);
+    header_box.append(&header_caption);
+    content.append(&header_box);
 
     let header_separator = Separator::new(Orientation::Horizontal);
-    header_separator.set_margin_top(4);
-    header_separator.set_margin_bottom(4);
     content.append(&header_separator);
 
     let loading_box = build_loading_box();
@@ -63,8 +65,8 @@ pub fn create_post_update_page() -> PostUpdatePage {
     let bottom_bar = GtkBox::new(Orientation::Horizontal, 8);
     bottom_bar.set_margin_start(12);
     bottom_bar.set_margin_end(12);
-    bottom_bar.set_margin_top(8);
-    bottom_bar.set_margin_bottom(8);
+    bottom_bar.set_margin_top(12);
+    bottom_bar.set_margin_bottom(12);
 
     let spacer = GtkBox::new(Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
