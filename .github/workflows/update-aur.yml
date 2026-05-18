@@ -20,7 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib pkgconf rust gtk4 glib2 vte4 github-cli
+          pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib pkgconf rust gtk4 glib2 vte4 gtksourceview5 github-cli
 
       - name: Create non-root build user
         run: |
