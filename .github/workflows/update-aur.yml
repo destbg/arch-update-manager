@@ -35,12 +35,15 @@ jobs:
           echo "PKGVER=$VER" >> $GITHUB_ENV
           echo "GHTAG=$TAG" >> $GITHUB_ENV
 
-      - name: Build release binary
+      - name: Build release binaries
         run: |
           sudo -u builder bash -lc 'cargo build --release --locked'
           install -d dist
           cp "target/release/${BINARY_NAME}" "dist/${BINARY_NAME}"
-          tar -C dist -czf "dist/${BINARY_NAME}-${PKGVER}-x86_64.tar.gz" "${BINARY_NAME}"
+          cp "target/release/${BINARY_NAME}-tray" "dist/${BINARY_NAME}-tray"
+          cp "target/release/${BINARY_NAME}-check" "dist/${BINARY_NAME}-check"
+          tar -C dist -czf "dist/${BINARY_NAME}-${PKGVER}-x86_64.tar.gz" \
+            "${BINARY_NAME}" "${BINARY_NAME}-tray" "${BINARY_NAME}-check"
 
       - name: Upload binary to release
         working-directory: ${{ github.workspace }}
