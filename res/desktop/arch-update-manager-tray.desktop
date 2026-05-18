@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Arch Update Manager Tray
+Comment=System tray applet for Arch Update Manager
+Exec=arch-update-manager-tray
+Icon=arch-update-manager
+Terminal=false
+Categories=System;PackageManager;
+X-GNOME-Autostart-enabled=true

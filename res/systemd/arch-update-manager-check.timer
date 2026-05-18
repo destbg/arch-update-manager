@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic check for pending Arch updates (arch-update-manager)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Persistent=true
+Unit=arch-update-manager-check.service
+
+[Install]
+WantedBy=timers.target

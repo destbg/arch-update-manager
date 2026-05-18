@@ -228,6 +228,9 @@ fn create_name_column(column_view: &ColumnView) {
 
         name_label.set_text(&data.name);
         desc_label.set_text(&data.description);
+
+        let show_desc = load_settings().show_package_descriptions;
+        desc_label.set_visible(show_desc);
     });
     let name_column = ColumnViewColumn::new(Some("Name"), Some(name_factory));
     name_column.set_expand(true);

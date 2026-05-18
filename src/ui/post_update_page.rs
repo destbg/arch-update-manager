@@ -1138,7 +1138,6 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
     let settings = crate::helpers::settings::load_settings();
     let keep_old = settings.keep_old_packages;
     let keep_uninstalled = settings.keep_uninstalled_packages;
-    let detect_switches = settings.detect_repo_switches;
     let flatpak_enabled = settings.enable_flatpak_support;
 
     glib::spawn_future_local(async move {
@@ -1206,22 +1205,18 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
             }
         };
 
-        let switches = if detect_switches {
-            let result =
-                gio::spawn_blocking(|| crate::helpers::repo_switches::detect_repo_switches()).await;
-            match result {
-                Ok(Ok(list)) => list,
-                Ok(Err(e)) => {
-                    eprintln!("Failed to detect package resolutions: {}", e);
-                    Vec::new()
-                }
-                Err(e) => {
-                    eprintln!("Resolutions detection thread failed: {:?}", e);
-                    Vec::new()
-                }
+        let switches_result =
+            gio::spawn_blocking(|| crate::helpers::repo_switches::detect_repo_switches()).await;
+        let switches = match switches_result {
+            Ok(Ok(list)) => list,
+            Ok(Err(e)) => {
+                eprintln!("Failed to detect package resolutions: {}", e);
+                Vec::new()
             }
-        } else {
-            Vec::new()
+            Err(e) => {
+                eprintln!("Resolutions detection thread failed: {:?}", e);
+                Vec::new()
+            }
         };
 
         let flatpak_unused = if flatpak_enabled {

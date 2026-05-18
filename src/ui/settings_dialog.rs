@@ -1,3 +1,4 @@
+use gio::ListStore;
 use gtk4::{ApplicationWindow, prelude::*};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -6,8 +7,12 @@ use crate::{
     helpers::{
         pacman_repos::get_repository_groups,
         settings::{get_available_aur_helpers, load_settings, save_settings},
+        tray_integration::apply_tray_state,
     },
-    models::{app_settings::AppSettings, snapshot_retention_period::SnapshotRetentionPeriod},
+    models::{
+        app_settings::AppSettings, snapshot_group::SnapshotGroup,
+        snapshot_retention_period::SnapshotRetentionPeriod,
+    },
     ui::favorites_dialog,
 };
 
@@ -15,6 +20,7 @@ pub fn show_settings_dialog(
     parent: &ApplicationWindow,
     settings: &AppSettings,
     favorites_column: Option<gtk4::ColumnViewColumn>,
+    package_store: Option<ListStore>,
 ) {
     install_settings_css();
 
@@ -44,12 +50,9 @@ pub fn show_settings_dialog(
     switcher.set_margin_bottom(8);
 
     let general_container = build_tab_container();
-    let (timeshift_check, retention_count_spin, retention_period_combo) =
-        create_timeshift_group(settings, &general_container);
-    let snapper_check = create_snapper_group(settings, &general_container);
-    let post_update_check = create_post_update_group(settings, &general_container);
+    let snapshot_group = create_snapshot_group(settings, &general_container);
     let remember_unselected_check = create_remember_unselected_group(settings, &general_container);
-    let detect_switches_check = create_repo_switches_group(settings, &general_container);
+    let system_tray_check = create_system_tray_group(settings, &general_container);
     stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
 
     let packages_container = build_tab_container();
@@ -63,13 +66,15 @@ pub fn show_settings_dialog(
     let (keep_old_spin, keep_uninstalled_spin) = create_cache_group(settings, &pacman_container);
     stack.add_titled(&wrap_tab(&pacman_container), Some("pacman"), "Pacman");
 
-    let favorites_container = build_tab_container();
+    let interface_container = build_tab_container();
+    let show_desc_check = create_show_descriptions_group(settings, &interface_container);
+    let post_update_check = create_post_update_group(settings, &interface_container);
     let (fav_enable_check, fav_show_col_check, manage_btn) =
-        create_favorites_group(settings, &favorites_container, parent);
+        create_favorites_group(settings, &interface_container, parent);
     stack.add_titled(
-        &wrap_tab(&favorites_container),
-        Some("favorites"),
-        "Favorites",
+        &wrap_tab(&interface_container),
+        Some("interface"),
+        "Interface",
     );
 
     content_area.append(&switcher);
@@ -84,10 +89,10 @@ pub fn show_settings_dialog(
         let aur_enable_check = aur_enable_check.clone();
         let aur_combo = aur_combo.clone();
         let aur_devel_check = aur_devel_check.clone();
-        let detect_switches_check = detect_switches_check.clone();
-        let timeshift_check = timeshift_check.clone();
-        let retention_count_spin = retention_count_spin.clone();
-        let retention_period_combo = retention_period_combo.clone();
+        let snapshot_enable_check = snapshot_group.enable_check.clone();
+        let snapshot_provider_combo = snapshot_group.provider_combo.clone();
+        let retention_count_spin = snapshot_group.retention_count_spin.clone();
+        let retention_period_combo = snapshot_group.retention_period_combo.clone();
         let fav_enable_check = fav_enable_check.clone();
         let fav_show_col_check = fav_show_col_check.clone();
         let separate_repo_check = separate_repo_check.clone();
@@ -97,7 +102,8 @@ pub fn show_settings_dialog(
         let flatpak_enable_check = flatpak_enable_check.clone();
         let keep_old_spin = keep_old_spin.clone();
         let keep_uninstalled_spin = keep_uninstalled_spin.clone();
-        let snapper_check = snapper_check.clone();
+        let system_tray_check = system_tray_check.clone();
+        let show_desc_check = show_desc_check.clone();
 
         Rc::new(move || {
             let mut new_settings = load_settings();
@@ -114,7 +120,13 @@ pub fn show_settings_dialog(
 
             new_settings.enable_devel_aur = aur_devel_check.is_active();
 
-            new_settings.create_timeshift_snapshot = timeshift_check.is_active();
+            let snapshots_enabled = snapshot_enable_check.is_active();
+            let provider = snapshot_provider_combo.active_id();
+            let provider_str = provider.as_deref();
+            new_settings.create_timeshift_snapshot =
+                snapshots_enabled && provider_str == Some("timeshift");
+            new_settings.create_snapper_snapshot =
+                snapshots_enabled && provider_str == Some("snapper");
             new_settings.snapshot_retention_count = retention_count_spin.value() as u32;
 
             if let Some(active_id) = retention_period_combo.active_id() {
@@ -126,8 +138,6 @@ pub fn show_settings_dialog(
                     _ => SnapshotRetentionPeriod::Forever,
                 };
             }
-
-            new_settings.detect_repo_switches = detect_switches_check.is_active();
 
             new_settings.enable_favorites = fav_enable_check.is_active();
             new_settings.show_favorites_column = fav_show_col_check.is_active();
@@ -147,10 +157,8 @@ pub fn show_settings_dialog(
             new_settings.enable_flatpak_support = flatpak_enable_check.is_active();
             new_settings.keep_old_packages = keep_old_spin.value() as u32;
             new_settings.keep_uninstalled_packages = keep_uninstalled_spin.value() as u32;
-            new_settings.create_snapper_snapshot = snapper_check
-                .as_ref()
-                .map(|c| c.is_active())
-                .unwrap_or(false);
+            new_settings.enable_system_tray = system_tray_check.is_active();
+            new_settings.show_package_descriptions = show_desc_check.is_active();
 
             if let Err(e) = save_settings(&new_settings) {
                 eprintln!("Failed to save settings: {}", e);
@@ -178,47 +186,7 @@ pub fn show_settings_dialog(
         save_all_clone();
     });
 
-    let retention_count_spin_weak = retention_count_spin.clone();
-    let retention_period_combo_weak = retention_period_combo.clone();
-    let save_all_clone = save_all.clone();
-    timeshift_check.connect_toggled(move |check| {
-        let is_active = check.is_active();
-
-        if let Some(parent) = retention_count_spin_weak.parent() {
-            if let Ok(box_widget) = parent.downcast::<gtk4::Box>() {
-                box_widget.set_sensitive(is_active);
-            }
-        }
-        if let Some(parent) = retention_period_combo_weak.parent() {
-            if let Ok(box_widget) = parent.downcast::<gtk4::Box>() {
-                box_widget.set_sensitive(is_active);
-            }
-        }
-
-        save_all_clone();
-    });
-
-    let save_all_clone = save_all.clone();
-    retention_count_spin.connect_value_changed(move |_| {
-        save_all_clone();
-    });
-
-    let save_all_clone = save_all.clone();
-    retention_period_combo.connect_changed(move |_| {
-        save_all_clone();
-    });
-
-    let save_all_clone = save_all.clone();
-    detect_switches_check.connect_toggled(move |_| {
-        save_all_clone();
-    });
-
-    if let Some(snapper) = snapper_check.as_ref() {
-        let save_all_clone = save_all.clone();
-        snapper.connect_toggled(move |_| {
-            save_all_clone();
-        });
-    }
+    wire_snapshot_group_signals(&snapshot_group, save_all.clone());
 
     let fav_show_col_check_weak = fav_show_col_check.downgrade();
     let manage_btn_weak = manage_btn.downgrade();
@@ -297,6 +265,24 @@ pub fn show_settings_dialog(
         save_all_clone();
     });
 
+    let save_all_clone = save_all.clone();
+    system_tray_check.connect_toggled(move |check| {
+        save_all_clone();
+        apply_tray_state(check.is_active());
+    });
+
+    let save_all_clone = save_all.clone();
+    let package_store_for_desc = package_store.clone();
+    show_desc_check.connect_toggled(move |_| {
+        save_all_clone();
+        if let Some(store) = &package_store_for_desc {
+            let n = store.n_items();
+            if n > 0 {
+                store.items_changed(0, n, n);
+            }
+        }
+    });
+
     dialog.present();
 }
 
@@ -349,40 +335,110 @@ fn create_aur_group(
     return (aur_enable_check, aur_combo, devel_check);
 }
 
-fn create_repo_switches_group(
+fn create_show_descriptions_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
 ) -> gtk4::CheckButton {
     let section = create_preference_group(
-        "Package Resolutions",
-        "Detect when locally built packages are available in a sync repository, or when a sync package wants to replace an installed one. Detected resolutions are shown on the post-update checks page.",
+        "Package List Display",
+        "Show a short description under each package name in the update list.",
     );
 
-    let detect_switches_check = gtk4::CheckButton::with_label("Detect repository switches");
-    detect_switches_check.add_css_class("settings-check");
-    detect_switches_check.set_active(settings.detect_repo_switches);
-    section.append(&detect_switches_check);
+    let check = gtk4::CheckButton::with_label("Show package descriptions");
+    check.add_css_class("settings-check");
+    check.set_active(settings.show_package_descriptions);
+    section.append(&check);
 
     main_container.append(&section);
 
-    return detect_switches_check;
+    return check;
 }
 
-fn create_timeshift_group(
+fn create_system_tray_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
-) -> (gtk4::CheckButton, gtk4::SpinButton, gtk4::ComboBoxText) {
-    let timeshift_section = create_preference_group(
-        "System Snapshots",
-        "Automatically create system snapshots before installing updates for easy rollback if needed.",
+) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "System Tray",
+        "Show a system tray icon that displays the number of pending updates.",
     );
 
-    let timeshift_check =
-        gtk4::CheckButton::with_label("Create Timeshift snapshot before the update");
-    timeshift_check.add_css_class("settings-check");
-    timeshift_check.set_active(settings.create_timeshift_snapshot);
+    let check = gtk4::CheckButton::with_label("Show system tray icon");
+    check.add_css_class("settings-check");
+    check.set_active(settings.enable_system_tray);
+    section.append(&check);
 
-    timeshift_section.append(&timeshift_check);
+    main_container.append(&section);
+
+    return check;
+}
+
+fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> SnapshotGroup {
+    let has_timeshift = crate::helpers::aur::is_command_available("timeshift");
+    let has_snapper = crate::helpers::snapper::is_snapper_installed();
+    let snap_pac_installed = crate::helpers::snapper::is_snap_pac_installed();
+
+    let section = create_preference_group(
+        "System Snapshots",
+        "Automatically create a system snapshot before installing updates for easy rollback if needed.",
+    );
+
+    let enable_check = gtk4::CheckButton::with_label("Create a system snapshot before the update");
+    enable_check.add_css_class("settings-check");
+
+    let initial_enabled = (settings.create_timeshift_snapshot && has_timeshift)
+        || (settings.create_snapper_snapshot && has_snapper);
+    enable_check.set_active(initial_enabled);
+    section.append(&enable_check);
+
+    if !has_timeshift && !has_snapper {
+        enable_check.set_sensitive(false);
+        let info = gtk4::Label::new(Some(
+            "Install timeshift or snapper to enable system snapshots.",
+        ));
+        info.set_wrap(true);
+        info.set_xalign(0.0);
+        info.set_margin_top(8);
+        info.add_css_class("dim-label");
+        info.add_css_class("caption");
+        section.append(&info);
+    }
+
+    let provider_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    provider_box.set_margin_top(12);
+    provider_box.set_hexpand(true);
+
+    let provider_label = gtk4::Label::new(Some("Snapshot provider"));
+    provider_label.set_halign(gtk4::Align::Start);
+    provider_label.set_hexpand(true);
+    provider_box.append(&provider_label);
+
+    let provider_combo = gtk4::ComboBoxText::new();
+    provider_combo.add_css_class("settings-combo");
+    if has_timeshift {
+        provider_combo.append(Some("timeshift"), "Timeshift");
+    }
+    if has_snapper {
+        provider_combo.append(Some("snapper"), "Snapper");
+    }
+
+    let active_provider = if settings.create_snapper_snapshot && has_snapper {
+        "snapper"
+    } else if settings.create_timeshift_snapshot && has_timeshift {
+        "timeshift"
+    } else if has_timeshift {
+        "timeshift"
+    } else if has_snapper {
+        "snapper"
+    } else {
+        ""
+    };
+    if !active_provider.is_empty() {
+        provider_combo.set_active_id(Some(active_provider));
+    }
+    provider_combo.set_halign(gtk4::Align::End);
+    provider_box.append(&provider_combo);
+    section.append(&provider_box);
 
     let retention_count_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     retention_count_box.set_margin_top(12);
@@ -399,7 +455,7 @@ fn create_timeshift_group(
     retention_count_spin.set_halign(gtk4::Align::End);
     retention_count_box.append(&retention_count_spin);
 
-    timeshift_section.append(&retention_count_box);
+    section.append(&retention_count_box);
 
     let retention_period_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     retention_period_box.set_margin_top(8);
@@ -429,7 +485,7 @@ fn create_timeshift_group(
     retention_period_combo.set_halign(gtk4::Align::End);
     retention_period_box.append(&retention_period_combo);
 
-    timeshift_section.append(&retention_period_box);
+    section.append(&retention_period_box);
 
     let deletion_info_label =
         gtk4::Label::new(Some("Old snapshots are only deleted when updating."));
@@ -438,19 +494,112 @@ fn create_timeshift_group(
     deletion_info_label.set_margin_top(8);
     deletion_info_label.add_css_class("dim-label");
     deletion_info_label.add_css_class("caption");
-    timeshift_section.append(&deletion_info_label);
+    section.append(&deletion_info_label);
 
-    let is_active = settings.create_timeshift_snapshot;
-    retention_count_box.set_sensitive(is_active);
-    retention_period_box.set_sensitive(is_active);
+    let snap_pac_info = gtk4::Label::new(Some(
+        "The snap-pac package is installed, so Snapper already creates a snapshot automatically before each pacman transaction. No extra action is needed.",
+    ));
+    snap_pac_info.set_wrap(true);
+    snap_pac_info.set_xalign(0.0);
+    snap_pac_info.set_margin_top(8);
+    snap_pac_info.add_css_class("dim-label");
+    snap_pac_info.add_css_class("caption");
+    snap_pac_info.set_visible(false);
+    section.append(&snap_pac_info);
 
-    main_container.append(&timeshift_section);
+    main_container.append(&section);
 
-    return (
-        timeshift_check,
+    let selected_timeshift = provider_combo
+        .active_id()
+        .map(|id| id == "timeshift")
+        .unwrap_or(false);
+    let selected_snapper = provider_combo
+        .active_id()
+        .map(|id| id == "snapper")
+        .unwrap_or(false);
+
+    provider_box.set_sensitive(initial_enabled);
+    retention_count_box.set_sensitive(initial_enabled && selected_timeshift);
+    retention_period_box.set_sensitive(initial_enabled && selected_timeshift);
+    retention_count_box.set_visible(selected_timeshift);
+    retention_period_box.set_visible(selected_timeshift);
+    deletion_info_label.set_visible(selected_timeshift);
+    snap_pac_info.set_visible(initial_enabled && selected_snapper && snap_pac_installed);
+
+    return SnapshotGroup {
+        enable_check,
+        provider_combo,
         retention_count_spin,
         retention_period_combo,
-    );
+        retention_count_box,
+        retention_period_box,
+        deletion_info_label,
+        snap_pac_info,
+        has_timeshift,
+        has_snapper,
+        snap_pac_installed,
+    };
+}
+
+fn wire_snapshot_group_signals(group: &SnapshotGroup, save_all: Rc<dyn Fn()>) {
+    let provider_combo_w = group.provider_combo.clone();
+    let retention_count_box_w = group.retention_count_box.clone();
+    let retention_period_box_w = group.retention_period_box.clone();
+    let deletion_info_label_w = group.deletion_info_label.clone();
+    let snap_pac_info_w = group.snap_pac_info.clone();
+    let snap_pac_installed = group.snap_pac_installed;
+    let save_all_clone = save_all.clone();
+    group.enable_check.connect_toggled(move |check| {
+        let enabled = check.is_active();
+        provider_combo_w.set_sensitive(enabled);
+        let is_timeshift = provider_combo_w
+            .active_id()
+            .map(|id| id == "timeshift")
+            .unwrap_or(false);
+        let is_snapper = provider_combo_w
+            .active_id()
+            .map(|id| id == "snapper")
+            .unwrap_or(false);
+        retention_count_box_w.set_sensitive(enabled && is_timeshift);
+        retention_period_box_w.set_sensitive(enabled && is_timeshift);
+        retention_count_box_w.set_visible(is_timeshift);
+        retention_period_box_w.set_visible(is_timeshift);
+        deletion_info_label_w.set_visible(is_timeshift);
+        snap_pac_info_w.set_visible(enabled && is_snapper && snap_pac_installed);
+        save_all_clone();
+    });
+
+    let enable_check_w = group.enable_check.clone();
+    let retention_count_box_w = group.retention_count_box.clone();
+    let retention_period_box_w = group.retention_period_box.clone();
+    let deletion_info_label_w = group.deletion_info_label.clone();
+    let snap_pac_info_w = group.snap_pac_info.clone();
+    let save_all_clone = save_all.clone();
+    group.provider_combo.connect_changed(move |combo| {
+        let enabled = enable_check_w.is_active();
+        let is_timeshift = combo
+            .active_id()
+            .map(|id| id == "timeshift")
+            .unwrap_or(false);
+        let is_snapper = combo.active_id().map(|id| id == "snapper").unwrap_or(false);
+        retention_count_box_w.set_sensitive(enabled && is_timeshift);
+        retention_period_box_w.set_sensitive(enabled && is_timeshift);
+        retention_count_box_w.set_visible(is_timeshift);
+        retention_period_box_w.set_visible(is_timeshift);
+        deletion_info_label_w.set_visible(is_timeshift);
+        snap_pac_info_w.set_visible(enabled && is_snapper && snap_pac_installed);
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    group
+        .retention_count_spin
+        .connect_value_changed(move |_| save_all_clone());
+
+    let save_all_clone = save_all.clone();
+    group
+        .retention_period_combo
+        .connect_changed(move |_| save_all_clone());
 }
 
 fn create_favorites_group(
@@ -614,45 +763,6 @@ fn create_post_update_group(
     main_container.append(&section);
 
     return check;
-}
-
-fn create_snapper_group(
-    settings: &AppSettings,
-    main_container: &gtk4::Box,
-) -> Option<gtk4::CheckButton> {
-    if !crate::helpers::snapper::is_snapper_installed() {
-        return None;
-    }
-
-    let snap_pac_present = crate::helpers::snapper::is_snap_pac_installed();
-
-    let section = create_preference_group(
-        "Snapper Snapshots",
-        "Create a Snapper snapshot before installing updates. This adds a recovery point you can roll back to if an update breaks the system.",
-    );
-
-    let check = gtk4::CheckButton::with_label("Create Snapper snapshot before the update");
-    check.add_css_class("settings-check");
-    check.set_active(settings.create_snapper_snapshot && !snap_pac_present);
-    check.set_sensitive(!snap_pac_present);
-
-    section.append(&check);
-
-    if snap_pac_present {
-        let info = gtk4::Label::new(Some(
-            "The snap-pac package is installed, so Snapper already creates a snapshot automatically before each pacman transaction. No extra setting is needed.",
-        ));
-        info.set_wrap(true);
-        info.set_xalign(0.0);
-        info.set_margin_top(8);
-        info.add_css_class("dim-label");
-        info.add_css_class("caption");
-        section.append(&info);
-    }
-
-    main_container.append(&section);
-
-    return Some(check);
 }
 
 fn create_flatpak_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::CheckButton {

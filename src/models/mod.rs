@@ -14,5 +14,7 @@ pub mod section_visibility;
 pub mod service_restart_outcome;
 pub mod service_row_state;
 pub mod shelly_update;
+pub mod snapshot_group;
 pub mod snapshot_retention_period;
+pub mod tray_state;
 pub mod update_error;

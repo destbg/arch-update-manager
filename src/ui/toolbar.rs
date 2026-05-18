@@ -157,7 +157,8 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
                     let settings = load_settings();
                     let favorites_column = crate::ui::main_window::find_favorites_column(&window);
-                    show_settings_dialog(&window, &settings, favorites_column);
+                    let package_store = crate::ui::main_window::find_package_store(&window);
+                    show_settings_dialog(&window, &settings, favorites_column, package_store);
                 }
             }
         ));

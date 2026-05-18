@@ -1,10 +1,5 @@
-mod constants;
-mod helpers;
-mod models;
-mod ui;
-
-use crate::constants::APP_ID;
-use crate::ui::build_ui;
+use arch_update_manager::constants::APP_ID;
+use arch_update_manager::ui::build_ui;
 use gtk4::prelude::*;
 use gtk4::{Application, ButtonsType, MessageDialog, MessageType};
 use std::env;

@@ -1,0 +1,265 @@
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+
+use chrono::{DateTime, Local};
+use ksni::blocking::TrayMethods;
+use ksni::menu::{StandardItem, SubMenu};
+use ksni::{MenuItem, Status, ToolTip, Tray};
+
+use arch_update_manager::models::tray_state::{TrayState, state_file};
+
+const POLL_INTERVAL: Duration = Duration::from_secs(15);
+const ICON_NO_UPDATES: &str = "arch-update-manager";
+const ICON_UPDATES_AVAILABLE: &str = "software-update-available-symbolic";
+
+struct ArchUpdateTray {
+    state: TrayState,
+}
+
+impl ArchUpdateTray {
+    fn launch_main_app() {
+        if let Err(e) = std::process::Command::new("pkexec")
+            .arg("arch-update-manager")
+            .spawn()
+        {
+            eprintln!("Failed to launch arch-update-manager: {}", e);
+        }
+    }
+
+    fn run_check() {
+        if let Err(e) = std::process::Command::new("systemctl")
+            .args(["--user", "start", "arch-update-manager-check.service"])
+            .status()
+        {
+            eprintln!("Failed to trigger check: {}", e);
+        }
+    }
+}
+
+impl Tray for ArchUpdateTray {
+    fn id(&self) -> String {
+        return "arch-update-manager-tray".into();
+    }
+
+    fn title(&self) -> String {
+        return "Arch Update Manager".into();
+    }
+
+    fn icon_name(&self) -> String {
+        if self.state.total() == 0 {
+            return ICON_NO_UPDATES.into();
+        }
+        return ICON_UPDATES_AVAILABLE.into();
+    }
+
+    fn status(&self) -> Status {
+        if self.state.total() == 0 {
+            return Status::Passive;
+        }
+        return Status::Active;
+    }
+
+    fn tool_tip(&self) -> ToolTip {
+        let title = match self.state.total() {
+            0 => "System is up to date".to_string(),
+            1 => "1 update available".to_string(),
+            n => format!("{} updates available", n),
+        };
+
+        let description = match self.state.last_check {
+            Some(t) => {
+                let local: DateTime<Local> = t.into();
+                format!("Last check: {}", local.format("%d %b %H:%M"))
+            }
+            None => "Last check: never".to_string(),
+        };
+
+        return ToolTip {
+            title,
+            description,
+            ..Default::default()
+        };
+    }
+
+    fn activate(&mut self, _x: i32, _y: i32) {
+        Self::launch_main_app();
+    }
+
+    fn menu(&self) -> Vec<MenuItem<Self>> {
+        let total = self.state.total();
+
+        let count_label = match total {
+            0 => "System is up to date".to_string(),
+            1 => "1 update available".to_string(),
+            n => format!("{} updates available", n),
+        };
+
+        let mut items: Vec<MenuItem<Self>> = vec![
+            StandardItem {
+                label: count_label,
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+        ];
+
+        if !self.state.packages.is_empty() {
+            items.push(make_submenu(
+                &format!("Packages ({})", self.state.packages.len()),
+                &self.state.packages,
+            ));
+        }
+
+        if !self.state.aur.is_empty() {
+            items.push(make_submenu(
+                &format!("AUR ({})", self.state.aur.len()),
+                &self.state.aur,
+            ));
+        }
+
+        if !self.state.flatpak.is_empty() {
+            items.push(make_submenu(
+                &format!("Flatpak ({})", self.state.flatpak.len()),
+                &self.state.flatpak,
+            ));
+        }
+
+        items.push(MenuItem::Separator);
+
+        let last_check_label = match self.state.last_check {
+            Some(t) => {
+                let local: DateTime<Local> = t.into();
+                format!("Last check: {}", local.format("%d %b %H:%M"))
+            }
+            None => "Last check: never".to_string(),
+        };
+        items.push(
+            StandardItem {
+                label: last_check_label,
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+        );
+
+        items.push(MenuItem::Separator);
+
+        items.push(
+            StandardItem {
+                label: "Open Arch Update Manager".into(),
+                activate: Box::new(|_: &mut Self| Self::launch_main_app()),
+                ..Default::default()
+            }
+            .into(),
+        );
+
+        items.push(
+            StandardItem {
+                label: "Check for updates".into(),
+                activate: Box::new(|_: &mut Self| Self::run_check()),
+                ..Default::default()
+            }
+            .into(),
+        );
+
+        items.push(
+            StandardItem {
+                label: "Exit".into(),
+                icon_name: "application-exit".into(),
+                activate: Box::new(|_: &mut Self| std::process::exit(0)),
+                ..Default::default()
+            }
+            .into(),
+        );
+
+        return items;
+    }
+}
+
+fn make_submenu(title: &str, entries: &[String]) -> MenuItem<ArchUpdateTray> {
+    let submenu: Vec<MenuItem<ArchUpdateTray>> = entries
+        .iter()
+        .map(|entry| {
+            StandardItem {
+                label: entry.clone(),
+                enabled: false,
+                ..Default::default()
+            }
+            .into()
+        })
+        .collect();
+
+    return SubMenu {
+        label: title.into(),
+        submenu,
+        ..Default::default()
+    }
+    .into();
+}
+
+fn read_state(path: &PathBuf) -> TrayState {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return TrayState::default();
+    };
+    return serde_json::from_str(&content).unwrap_or_default();
+}
+
+fn main() {
+    let path = match state_file() {
+        Some(p) => p,
+        None => {
+            eprintln!("Could not determine state file location");
+            std::process::exit(1);
+        }
+    };
+
+    let initial_state = read_state(&path);
+
+    let tray = ArchUpdateTray {
+        state: initial_state.clone(),
+    };
+
+    let handle = match tray.spawn() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("Failed to spawn tray: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let last_seen = Arc::new(Mutex::new(initial_state));
+    let path_clone = path.clone();
+    let last_seen_clone = Arc::clone(&last_seen);
+
+    thread::spawn(move || {
+        loop {
+            thread::sleep(POLL_INTERVAL);
+            let new_state = read_state(&path_clone);
+
+            let changed = {
+                let prev = last_seen_clone.lock().unwrap();
+                !same_state(&prev, &new_state)
+            };
+
+            if changed {
+                *last_seen_clone.lock().unwrap() = new_state.clone();
+                handle.update(|t: &mut ArchUpdateTray| {
+                    t.state = new_state.clone();
+                });
+            }
+        }
+    });
+
+    loop {
+        thread::park();
+    }
+}
+
+fn same_state(a: &TrayState, b: &TrayState) -> bool {
+    return a.last_check == b.last_check
+        && a.packages == b.packages
+        && a.aur == b.aur
+        && a.flatpak == b.flatpak;
+}

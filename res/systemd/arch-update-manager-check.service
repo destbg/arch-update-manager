@@ -1,0 +1,8 @@
+[Unit]
+Description=Check for pending Arch updates (arch-update-manager)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/arch-update-manager-check

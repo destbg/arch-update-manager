@@ -49,7 +49,8 @@ pub fn build_ui(app: &Application) {
         settings_button.connect_clicked(move |_| {
             let settings = load_settings();
             let favorites_column = find_favorites_column(&window_clone);
-            show_settings_dialog(&window_clone, &settings, favorites_column);
+            let package_store = find_package_store(&window_clone);
+            show_settings_dialog(&window_clone, &settings, favorites_column, package_store);
         });
 
         header_bar.pack_end(&settings_button);
@@ -181,6 +182,21 @@ pub fn find_favorites_column(window: &ApplicationWindow) -> Option<ColumnViewCol
         .columns()
         .item(0)
         .and_downcast::<ColumnViewColumn>()
+}
+
+pub fn find_package_store(window: &ApplicationWindow) -> Option<ListStore> {
+    let main_box = window.child().and_downcast::<GtkBox>()?;
+    let stack = main_box.first_child().and_downcast::<Stack>()?;
+    let content_box = stack.child_by_name("content").and_downcast::<GtkBox>()?;
+    let paned = content_box
+        .last_child()
+        .and_then(|c| c.prev_sibling())
+        .and_downcast::<Paned>()?;
+    let scrolled = paned.start_child().and_downcast::<ScrolledWindow>()?;
+    let column_view = scrolled.child().and_downcast::<ColumnView>()?;
+    let selection_model = column_view.model()?;
+    let single = selection_model.downcast_ref::<SingleSelection>()?;
+    return single.model().and_downcast::<ListStore>();
 }
 
 pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindow) {

@@ -31,8 +31,6 @@ pub struct AppSettings {
     pub separate_repositories: Vec<String>,
     #[serde(default = "default_remember_unselected")]
     pub remember_unselected_packages: bool,
-    #[serde(default = "default_detect_repo_switches")]
-    pub detect_repo_switches: bool,
     #[serde(default = "default_enable_favorites")]
     pub enable_favorites: bool,
     #[serde(default)]
@@ -51,6 +49,10 @@ pub struct AppSettings {
     pub run_post_update_checks: bool,
     #[serde(default)]
     pub create_snapper_snapshot: bool,
+    #[serde(default)]
+    pub enable_system_tray: bool,
+    #[serde(default = "default_show_package_descriptions")]
+    pub show_package_descriptions: bool,
 }
 
 fn default_remember_unselected() -> bool {
@@ -58,10 +60,6 @@ fn default_remember_unselected() -> bool {
 }
 
 fn default_enable_favorites() -> bool {
-    return true;
-}
-
-fn default_detect_repo_switches() -> bool {
     return true;
 }
 
@@ -82,5 +80,9 @@ fn default_keep_old_packages() -> u32 {
 }
 
 fn default_run_post_update_checks() -> bool {
+    return true;
+}
+
+fn default_show_package_descriptions() -> bool {
     return true;
 }

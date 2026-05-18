@@ -5,14 +5,16 @@ pkgdesc="A Linux Mint inspired GTK4-based update manager for Arch Linux"
 arch=('x86_64')
 url="https://github.com/destbg/arch-update-manager"
 license=('MIT')
-depends=('gtk4' 'vte4' 'gtksourceview5' 'polkit' 'pacman' 'pacman-contrib' 'timeshift' 'expect')
+depends=('gtk4' 'vte4' 'gtksourceview5' 'polkit' 'pacman' 'pacman-contrib' 'expect' 'sudo')
 provides=('arch-update-manager')
 conflicts=('arch-update-manager')
 makedepends=('cargo' 'git')
 optdepends=('paru: AUR helper support'
             'yay: AUR helper support'
             'flatpak: Flatpak package support'
-            'meld: visual diff editor for pacnew files')
+            'meld: visual diff editor for pacnew files'
+            'timeshift: pre-update system snapshots'
+            'snapper: pre-update Btrfs snapshots')
 source=("git+$url.git#tag=${pkgver}")
 sha256sums=('SKIP')
 
@@ -33,10 +35,17 @@ package() {
 	cd "$pkgname"
 	
 	install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
-	
+	install -Dm755 "target/release/$pkgname-tray" "$pkgdir/usr/bin/$pkgname-tray"
+	install -Dm755 "target/release/$pkgname-check" "$pkgdir/usr/bin/$pkgname-check"
+
 	install -Dm644 "$pkgname.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
-	
+
 	install -Dm644 "com.destbg.$pkgname.policy" "$pkgdir/usr/share/polkit-1/actions/com.destbg.$pkgname.policy"
+
+	install -Dm644 "res/systemd/$pkgname-check.service" \
+		"$pkgdir/usr/lib/systemd/user/$pkgname-check.service"
+	install -Dm644 "res/systemd/$pkgname-check.timer" \
+		"$pkgdir/usr/lib/systemd/user/$pkgname-check.timer"
 	
 	for size in 48x48 256x256 512x512; do
 		if [ -f "icons/$size/apps/$pkgname.png" ]; then

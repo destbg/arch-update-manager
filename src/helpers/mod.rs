@@ -13,4 +13,5 @@ pub mod settings;
 pub mod snapper;
 pub mod terminal;
 pub mod timeshift;
+pub mod tray_integration;
 pub mod unselected_packages;
