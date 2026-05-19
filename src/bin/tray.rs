@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -20,6 +21,7 @@ const ICON_UPDATES_AVAILABLE: &str = "software-update-available-symbolic";
 
 struct ArchUpdateTray {
     state: TrayState,
+    expect_check_notification: Arc<AtomicBool>,
 }
 
 impl ArchUpdateTray {
@@ -32,7 +34,8 @@ impl ArchUpdateTray {
         }
     }
 
-    fn run_check() {
+    fn run_check(&self) {
+        self.expect_check_notification.store(true, Ordering::SeqCst);
         if let Err(e) = std::process::Command::new("systemctl")
             .args(["--user", "start", "arch-update-manager-check.service"])
             .status()
@@ -165,7 +168,7 @@ impl Tray for ArchUpdateTray {
         items.push(
             StandardItem {
                 label: "Check for updates".into(),
-                activate: Box::new(|_: &mut Self| Self::run_check()),
+                activate: Box::new(|s: &mut Self| s.run_check()),
                 ..Default::default()
             }
             .into(),
@@ -222,9 +225,11 @@ fn main() {
     };
 
     let initial_state = read_state(&path);
+    let expect_check_notification = Arc::new(AtomicBool::new(false));
 
     let tray = ArchUpdateTray {
         state: initial_state.clone(),
+        expect_check_notification: expect_check_notification.clone(),
     };
 
     let handle = match tray.spawn() {
@@ -238,6 +243,7 @@ fn main() {
     let last_seen = Arc::new(Mutex::new(initial_state));
     let path_clone = path.clone();
     let last_seen_clone = Arc::clone(&last_seen);
+    let expect_check_for_thread = expect_check_notification.clone();
 
     let (tx, rx) = mpsc::channel::<()>();
 
@@ -282,14 +288,17 @@ fn main() {
                 t.state = new_state.clone();
             });
 
-            if changed {
-                let is_new_check = match (prev_last_check, new_state.last_check) {
-                    (Some(prev), Some(curr)) => curr > prev,
-                    (None, Some(_)) => true,
-                    _ => false,
-                };
+            let is_new_check = match (prev_last_check, new_state.last_check) {
+                (Some(prev), Some(curr)) => curr > prev,
+                (None, Some(_)) => true,
+                _ => false,
+            };
 
-                if is_new_check
+            if is_new_check {
+                let manual = expect_check_for_thread.swap(false, Ordering::SeqCst);
+                if manual {
+                    fire_check_complete_notification(new_state.total());
+                } else if changed
                     && prev_total == 0
                     && new_state.total() > 0
                     && load_settings().show_update_notifications
@@ -327,6 +336,44 @@ fn fire_notification(count: usize) {
             .action("default", "Open")
             .action("open", "Open Update Manager")
             .show();
+
+        match result {
+            Ok(handle) => handle.wait_for_action(|action| {
+                if action == "default" || action == "open" {
+                    ArchUpdateTray::launch_main_app();
+                }
+            }),
+            Err(e) => eprintln!("Failed to show notification: {}", e),
+        }
+    });
+}
+
+fn fire_check_complete_notification(count: usize) {
+    let (summary, body) = match count {
+        0 => ("Check Complete", "System is up to date".to_string()),
+        1 => ("Arch Updates Available", "1 update available".to_string()),
+        n => (
+            "Arch Updates Available",
+            format!("{} updates available", n),
+        ),
+    };
+
+    thread::spawn(move || {
+        let mut notification = notify_rust::Notification::new();
+        notification
+            .summary(summary)
+            .body(&body)
+            .icon("arch-update-manager")
+            .appname("Arch Update Manager");
+
+        let result = if count > 0 {
+            notification
+                .action("default", "Open")
+                .action("open", "Open Update Manager")
+                .show()
+        } else {
+            notification.show()
+        };
 
         match result {
             Ok(handle) => handle.wait_for_action(|action| {

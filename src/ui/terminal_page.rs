@@ -98,6 +98,7 @@ pub fn create_terminal_page() -> GtkBox {
             } else {
                 title_label.set_text("Installation Failed");
                 continue_btn_clone.set_label("Refresh Package List");
+                fire_update_failed_notification(exit_status);
             }
 
             button_box.set_visible(true);
@@ -123,36 +124,6 @@ pub fn create_terminal_page() -> GtkBox {
     ));
 
     return main_box;
-}
-
-fn refresh_package_list(main_box: &GtkBox) {
-    let Some((stack, content_box, window)) = get_navigation_stack(main_box) else {
-        return;
-    };
-
-    stack.set_visible_child_name("loading");
-    load_packages(stack, content_box, window);
-}
-
-fn go_to_post_update(main_box: &GtkBox) {
-    let Some((stack, _content_box, window)) = get_navigation_stack(main_box) else {
-        return;
-    };
-
-    if stack.child_by_name("post-update").is_none() {
-        refresh_package_list(main_box);
-        return;
-    }
-
-    crate::ui::main_window::POST_UPDATE_PAGE.with(|cell| {
-        if let Some(page) = cell.borrow().as_ref() {
-            reset_post_update_page(page);
-        }
-    });
-
-    stack.set_visible_child_name("post-update");
-
-    run_post_update_detections(window);
 }
 
 pub fn run_command_in_dialog<F>(parent: &gtk4::Window, command: &str, on_finished: F)
@@ -254,4 +225,52 @@ where
 
     dialog.present();
     spawn_terminal(&terminal, vec!["bash", "-lc", command]);
+}
+
+fn refresh_package_list(main_box: &GtkBox) {
+    let Some((stack, content_box, window)) = get_navigation_stack(main_box) else {
+        return;
+    };
+
+    stack.set_visible_child_name("loading");
+    load_packages(stack, content_box, window);
+}
+
+fn go_to_post_update(main_box: &GtkBox) {
+    let Some((stack, _content_box, window)) = get_navigation_stack(main_box) else {
+        return;
+    };
+
+    if stack.child_by_name("post-update").is_none() {
+        refresh_package_list(main_box);
+        return;
+    }
+
+    crate::ui::main_window::POST_UPDATE_PAGE.with(|cell| {
+        if let Some(page) = cell.borrow().as_ref() {
+            reset_post_update_page(page);
+        }
+    });
+
+    stack.set_visible_child_name("post-update");
+
+    run_post_update_detections(window);
+}
+
+fn fire_update_failed_notification(exit_status: i32) {
+    std::thread::spawn(move || {
+        let result = notify_rust::Notification::new()
+            .summary("Update Failed")
+            .body(&format!(
+                "The update command exited with status {}.",
+                exit_status
+            ))
+            .icon("arch-update-manager")
+            .appname("Arch Update Manager")
+            .show();
+
+        if let Err(e) = result {
+            eprintln!("Failed to show update-failed notification: {}", e);
+        }
+    });
 }
