@@ -269,6 +269,7 @@ fn create_version_column(column_view: &ColumnView) {
     let version_factory = gtk4::SignalListItemFactory::new();
     version_factory.connect_setup(move |_factory, item| {
         let vbox = GtkBox::new(Orientation::Vertical, 2);
+        vbox.set_valign(gtk4::Align::Center);
         let old_label = Label::new(None);
         old_label.set_xalign(0.0);
         old_label.add_css_class("dim-label");
@@ -293,6 +294,9 @@ fn create_version_column(column_view: &ColumnView) {
 
         old_label.set_text(&data.current_version);
         new_label.set_text(&data.new_version);
+        old_label.set_visible(
+            !data.current_version.is_empty() && data.current_version != data.new_version,
+        );
     });
     let version_column = ColumnViewColumn::new(Some("Version"), Some(version_factory));
     version_column.set_sorter(Some(&package_sorter(|a, b| {
