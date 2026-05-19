@@ -43,6 +43,27 @@ impl ArchUpdateTray {
             eprintln!("Failed to trigger check: {}", e);
         }
     }
+
+    fn visible_total(&self) -> usize {
+        let settings = load_settings();
+        if settings.tray_only_favorites && settings.enable_favorites {
+            return count_favorite_updates(&self.state, &settings.favorite_packages);
+        }
+        return self.state.total();
+    }
+}
+
+fn count_favorite_updates(state: &TrayState, favorites: &[String]) -> usize {
+    return state
+        .packages
+        .iter()
+        .chain(state.aur.iter())
+        .chain(state.flatpak.iter())
+        .filter(|line| {
+            let name = line.split_whitespace().next().unwrap_or("");
+            favorites.iter().any(|f| f == name)
+        })
+        .count();
 }
 
 impl Tray for ArchUpdateTray {
@@ -55,14 +76,14 @@ impl Tray for ArchUpdateTray {
     }
 
     fn icon_name(&self) -> String {
-        if self.state.total() == 0 {
+        if self.visible_total() == 0 {
             return ICON_NO_UPDATES.into();
         }
         return ICON_UPDATES_AVAILABLE.into();
     }
 
     fn status(&self) -> Status {
-        if self.state.total() > 0 {
+        if self.visible_total() > 0 {
             return Status::Active;
         }
         if load_settings().tray_always_visible {

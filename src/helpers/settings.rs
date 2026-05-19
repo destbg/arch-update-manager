@@ -30,6 +30,7 @@ fn default_settings() -> AppSettings {
         create_snapper_snapshot: false,
         enable_system_tray: false,
         tray_always_visible: false,
+        tray_only_favorites: false,
         show_update_notifications: false,
         show_package_descriptions: true,
     };

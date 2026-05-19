@@ -54,6 +54,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub tray_always_visible: bool,
     #[serde(default)]
+    pub tray_only_favorites: bool,
+    #[serde(default)]
     pub show_update_notifications: bool,
     #[serde(default = "default_show_package_descriptions")]
     pub show_package_descriptions: bool,
