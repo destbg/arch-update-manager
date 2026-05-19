@@ -1,3 +1,4 @@
+use crate::helpers::desktop_apps::get_desktop_app_packages;
 use crate::helpers::installed_packages::get_all_installed_packages;
 use crate::helpers::settings::{load_settings, save_settings};
 use gtk4::prelude::*;
@@ -113,10 +114,57 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
         list_box.invalidate_filter();
     });
 
-    dialog.add_button("Close", gtk4::ResponseType::Close);
+    let bottom_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    bottom_row.set_halign(gtk4::Align::End);
+    bottom_row.set_margin_start(12);
+    bottom_row.set_margin_end(12);
+    bottom_row.set_margin_top(8);
+    bottom_row.set_margin_bottom(12);
+
+    let add_apps_btn = gtk4::Button::with_label("Favorite desktop apps");
+    add_apps_btn.set_tooltip_text(Some(
+        "Tick every installed package that is a desktop application",
+    ));
+    bottom_row.append(&add_apps_btn);
+
+    let clear_btn = gtk4::Button::with_label("Clear all");
+    clear_btn.add_css_class("destructive-action");
+    clear_btn.set_tooltip_text(Some("Uncheck every package in the list"));
+    bottom_row.append(&clear_btn);
+
+    let close_btn = gtk4::Button::with_label("Close");
+    close_btn.add_css_class("suggested-action");
+    bottom_row.append(&close_btn);
+
+    content.append(&bottom_row);
+
+    let checkboxes_for_add = checkboxes.clone();
+    add_apps_btn.connect_clicked(move |_| {
+        let desktop_apps = get_desktop_app_packages();
+        if desktop_apps.is_empty() {
+            return;
+        }
+        for (name, cb) in checkboxes_for_add.borrow().iter() {
+            if desktop_apps.contains(name) {
+                cb.set_active(true);
+            }
+        }
+    });
+
+    let checkboxes_for_clear = checkboxes.clone();
+    clear_btn.connect_clicked(move |_| {
+        for (_, cb) in checkboxes_for_clear.borrow().iter() {
+            cb.set_active(false);
+        }
+    });
+
+    let dialog_for_close = dialog.clone();
+    close_btn.connect_clicked(move |_| {
+        dialog_for_close.close();
+    });
 
     let checkboxes_clone = checkboxes.clone();
-    dialog.connect_response(move |dlg, _| {
+    dialog.connect_close_request(move |_| {
         let mut s = load_settings();
         s.favorite_packages = checkboxes_clone
             .borrow()
@@ -127,7 +175,7 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
         if let Err(e) = save_settings(&s) {
             eprintln!("Failed to save favorite packages: {}", e);
         }
-        dlg.close();
+        return glib::Propagation::Proceed;
     });
 
     dialog.present();

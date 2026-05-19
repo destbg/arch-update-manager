@@ -1,5 +1,6 @@
 pub mod aur;
 pub mod database_lock;
+pub mod desktop_apps;
 pub mod decorations;
 pub mod elevated;
 pub mod flatpak;
