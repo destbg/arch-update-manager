@@ -5,12 +5,24 @@ use chrono::Utc;
 
 use arch_update_manager::helpers::aur::get_aur_updates;
 use arch_update_manager::helpers::flatpak::get_flatpak_updates;
+use arch_update_manager::helpers::network::is_network_metered;
 use arch_update_manager::helpers::pacman_ignore::list_managed_ignores;
+use arch_update_manager::helpers::power::is_on_battery;
 use arch_update_manager::helpers::settings::load_settings;
 use arch_update_manager::models::tray_state::{TrayState, state_dir, state_file};
 
 fn main() {
     let settings = load_settings();
+
+    if settings.skip_check_on_metered && is_network_metered() {
+        eprintln!("Skipping update check: network is metered.");
+        return;
+    }
+    if settings.skip_check_on_battery && is_on_battery() {
+        eprintln!("Skipping update check: running on battery.");
+        return;
+    }
+
     let blacklist = list_managed_ignores();
 
     let packages: Vec<String> = get_repo_updates()

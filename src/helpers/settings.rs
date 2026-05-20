@@ -33,6 +33,8 @@ fn default_settings() -> AppSettings {
         tray_always_visible: false,
         tray_only_favorites: false,
         tray_menu_only_favorites: false,
+        skip_check_on_metered: false,
+        skip_check_on_battery: false,
         show_update_notifications: false,
         show_package_descriptions: true,
     };

@@ -66,6 +66,8 @@ pub fn show_settings_dialog(
         menu_only_favorites_check,
         notify_check,
         check_interval_spin,
+        skip_metered_check,
+        skip_battery_check,
     ) = create_system_tray_group(settings, &general_container);
     stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
 
@@ -123,6 +125,8 @@ pub fn show_settings_dialog(
         let menu_only_favorites_check = menu_only_favorites_check.clone();
         let notify_check = notify_check.clone();
         let check_interval_spin = check_interval_spin.clone();
+        let skip_metered_check = skip_metered_check.clone();
+        let skip_battery_check = skip_battery_check.clone();
         let show_desc_check = show_desc_check.clone();
 
         Rc::new(move || {
@@ -187,6 +191,10 @@ pub fn show_settings_dialog(
             new_settings.show_update_notifications =
                 system_tray_check.is_active() && notify_check.is_active();
             new_settings.check_interval_minutes = (check_interval_spin.value() as u32).max(1);
+            new_settings.skip_check_on_metered =
+                system_tray_check.is_active() && skip_metered_check.is_active();
+            new_settings.skip_check_on_battery =
+                system_tray_check.is_active() && skip_battery_check.is_active();
             new_settings.show_package_descriptions = show_desc_check.is_active();
 
             if let Err(e) = save_settings(&new_settings) {
@@ -300,12 +308,16 @@ pub fn show_settings_dialog(
     let only_favorites_check_weak = only_favorites_check.clone();
     let menu_only_favorites_check_weak = menu_only_favorites_check.clone();
     let check_interval_spin_weak = check_interval_spin.clone();
+    let skip_metered_check_weak = skip_metered_check.clone();
+    let skip_battery_check_weak = skip_battery_check.clone();
     system_tray_check.connect_toggled(move |check| {
         notify_check_weak.set_sensitive(check.is_active());
         always_visible_check_weak.set_sensitive(check.is_active());
         only_favorites_check_weak.set_sensitive(check.is_active());
         menu_only_favorites_check_weak.set_sensitive(check.is_active());
         check_interval_spin_weak.set_sensitive(check.is_active());
+        skip_metered_check_weak.set_sensitive(check.is_active());
+        skip_battery_check_weak.set_sensitive(check.is_active());
         save_all_clone();
         if check.is_active() {
             let minutes = (check_interval_spin_weak.value() as u32).max(1);
@@ -343,6 +355,16 @@ pub fn show_settings_dialog(
     menu_only_favorites_check.connect_toggled(move |_| {
         save_all_clone();
         kick_tray();
+    });
+
+    let save_all_clone = save_all.clone();
+    skip_metered_check.connect_toggled(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    skip_battery_check.connect_toggled(move |_| {
+        save_all_clone();
     });
 
     let save_all_clone = save_all.clone();
@@ -445,6 +467,8 @@ fn create_system_tray_group(
     gtk4::CheckButton,
     gtk4::CheckButton,
     gtk4::SpinButton,
+    gtk4::CheckButton,
+    gtk4::CheckButton,
 ) {
     let systemd_available = has_systemd_user_session();
 
@@ -515,6 +539,24 @@ fn create_system_tray_group(
     interval_label.set_sensitive(systemd_available && settings.enable_system_tray);
     section.append(&interval_box);
 
+    let skip_metered_check =
+        gtk4::CheckButton::with_label("Skip check on metered network connections");
+    skip_metered_check.add_css_class("settings-check");
+    skip_metered_check.set_active(settings.skip_check_on_metered && systemd_available);
+    skip_metered_check.set_sensitive(systemd_available && settings.enable_system_tray);
+    skip_metered_check.set_margin_top(8);
+    skip_metered_check.set_margin_start(24);
+    section.append(&skip_metered_check);
+
+    let skip_battery_check =
+        gtk4::CheckButton::with_label("Skip check when running on battery power");
+    skip_battery_check.add_css_class("settings-check");
+    skip_battery_check.set_active(settings.skip_check_on_battery && systemd_available);
+    skip_battery_check.set_sensitive(systemd_available && settings.enable_system_tray);
+    skip_battery_check.set_margin_top(8);
+    skip_battery_check.set_margin_start(24);
+    section.append(&skip_battery_check);
+
     if !systemd_available {
         let warning = gtk4::Label::new(Some(
             "A systemd user session is required to use the tray. This system does not appear to have one available.",
@@ -536,6 +578,8 @@ fn create_system_tray_group(
         menu_only_favorites_check,
         notify_check,
         check_interval_spin,
+        skip_metered_check,
+        skip_battery_check,
     );
 }
 
