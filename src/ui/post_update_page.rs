@@ -1,7 +1,8 @@
 use gtk4::prelude::*;
 use gtk4::{
     Align, ApplicationWindow, Box as GtkBox, Button, CheckButton, Image, Label, ListBox,
-    ListBoxRow, Orientation, ScrolledWindow, SelectionMode, Separator, Spinner,
+    ListBoxRow, ListItem, ListView, NoSelection, Orientation, ScrolledWindow, SelectionMode,
+    Separator, SignalListItemFactory, Spinner, StringList, StringObject,
 };
 use shlex::try_quote;
 use std::cell::RefCell;
@@ -1079,37 +1080,56 @@ pub fn set_cache_section(
     caption.set_wrap(true);
     section.card.append(&caption);
 
-    let mut combined: Vec<&String> = Vec::new();
-    combined.extend(candidates.old_packages.iter());
-    combined.extend(candidates.uninstalled_packages.iter());
-    if !combined.is_empty() {
-        let list_box = ListBox::new();
-        list_box.set_selection_mode(SelectionMode::None);
-        list_box.add_css_class("boxed-list");
-
-        for name in combined {
-            let row = ListBoxRow::new();
-            row.set_activatable(false);
-            row.set_selectable(false);
-
-            let row_box = GtkBox::new(Orientation::Horizontal, 8);
-            row_box.set_margin_start(12);
-            row_box.set_margin_end(12);
-            row_box.set_margin_top(6);
-            row_box.set_margin_bottom(6);
-
-            let label = Label::new(Some(name));
-            label.set_xalign(0.0);
-            label.set_hexpand(true);
-            label.set_wrap(true);
-            label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
-            row_box.append(&label);
-
-            row.set_child(Some(&row_box));
-            list_box.append(&row);
+    let total_items = candidates.old_packages.len() + candidates.uninstalled_packages.len();
+    if total_items > 0 {
+        let model = StringList::new(&[]);
+        for name in &candidates.old_packages {
+            model.append(name);
+        }
+        for name in &candidates.uninstalled_packages {
+            model.append(name);
         }
 
-        section.card.append(&list_box);
+        let factory = SignalListItemFactory::new();
+        factory.connect_setup(|_, list_item| {
+            let Some(item) = list_item.downcast_ref::<ListItem>() else {
+                return;
+            };
+            let label = Label::new(None);
+            label.set_xalign(0.0);
+            label.set_margin_start(12);
+            label.set_margin_end(12);
+            label.set_margin_top(6);
+            label.set_margin_bottom(6);
+            label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+            item.set_child(Some(&label));
+        });
+        factory.connect_bind(|_, list_item| {
+            let Some(item) = list_item.downcast_ref::<ListItem>() else {
+                return;
+            };
+            let Some(name_obj) = item.item().and_downcast::<StringObject>() else {
+                return;
+            };
+            let Some(label) = item.child().and_downcast::<Label>() else {
+                return;
+            };
+            label.set_text(&name_obj.string());
+        });
+
+        let selection = NoSelection::new(Some(model));
+        let list_view = ListView::new(Some(selection), Some(factory));
+        list_view.set_single_click_activate(false);
+
+        let list_scroll = ScrolledWindow::builder()
+            .hscrollbar_policy(gtk4::PolicyType::Never)
+            .vscrollbar_policy(gtk4::PolicyType::Automatic)
+            .max_content_height(240)
+            .propagate_natural_height(true)
+            .child(&list_view)
+            .build();
+
+        section.card.append(&list_scroll);
     }
 
     let button_row = GtkBox::new(Orientation::Horizontal, 0);
