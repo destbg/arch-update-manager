@@ -1,11 +1,14 @@
 pub mod blacklist_dialog;
+pub mod context_menu;
 pub mod dialogs;
+pub mod downgrade_dialog;
 pub mod error_page;
 pub mod favorites_dialog;
 pub mod info_panel;
 pub mod loading;
 pub mod main_window;
 pub mod no_updates;
+pub mod package_files_dialog;
 pub mod package_list;
 pub mod pacnew_diff;
 pub mod post_update_page;

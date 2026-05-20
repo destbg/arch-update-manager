@@ -1,14 +1,18 @@
 use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::unselected_packages::save_unselected_packages;
 use crate::models::package_object::PackageUpdateObject;
+use crate::models::package_update::PackageUpdate;
+use crate::ui::context_menu::show_package_context_menu;
 use gio::ListStore;
 use glib::{clone, format_size};
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, CustomFilter, CustomSorter,
-    FilterListModel, Label, Ordering, Orientation, SearchEntry, SingleSelection, SortListModel,
-    Statusbar, ToggleButton,
+    FilterListModel, GestureClick, Label, Ordering, Orientation, SearchEntry, SingleSelection,
+    SortListModel, Statusbar, ToggleButton, gdk,
 };
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub fn create_package_list(
     search_entry: &SearchEntry,
@@ -255,6 +259,23 @@ fn create_name_column(column_view: &ColumnView) {
         desc_label.add_css_class("dim-label");
         vbox.append(&name_label);
         vbox.append(&desc_label);
+
+        let row_package: Rc<RefCell<Option<PackageUpdate>>> = Rc::new(RefCell::new(None));
+        let gesture = GestureClick::new();
+        gesture.set_button(gdk::BUTTON_SECONDARY);
+        let row_package_for_gesture = row_package.clone();
+        let vbox_for_gesture = vbox.clone();
+        gesture.connect_pressed(move |_, _n_press, x, y| {
+            let Some(pkg) = row_package_for_gesture.borrow().clone() else {
+                return;
+            };
+            show_package_context_menu(vbox_for_gesture.upcast_ref::<gtk4::Widget>(), &pkg, x, y);
+        });
+        vbox.add_controller(gesture);
+        unsafe {
+            vbox.set_data("ctx_pkg", row_package);
+        }
+
         item.downcast_ref::<gtk4::ListItem>()
             .unwrap()
             .set_child(Some(&vbox));
@@ -274,8 +295,25 @@ fn create_name_column(column_view: &ColumnView) {
         name_label.set_text(&data.name);
         desc_label.set_text(&data.description);
 
+        unsafe {
+            if let Some(state) = vbox.data::<Rc<RefCell<Option<PackageUpdate>>>>("ctx_pkg") {
+                *state.as_ref().borrow_mut() = Some(data.clone());
+            }
+        }
+
         let show_desc = load_settings().show_package_descriptions;
         desc_label.set_visible(show_desc);
+    });
+    name_factory.connect_unbind(move |_factory, item| {
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        let Some(vbox) = list_item.child().and_downcast::<GtkBox>() else {
+            return;
+        };
+        unsafe {
+            if let Some(state) = vbox.data::<Rc<RefCell<Option<PackageUpdate>>>>("ctx_pkg") {
+                *state.as_ref().borrow_mut() = None;
+            }
+        }
     });
     let name_column = ColumnViewColumn::new(Some("Name"), Some(name_factory));
     name_column.set_expand(true);

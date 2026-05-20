@@ -1,6 +1,7 @@
 pub mod app_settings;
 pub mod aur_managers;
 pub mod cache_candidates;
+pub mod cached_version;
 pub mod info_panel;
 pub mod installed_flatpak;
 pub mod paccache_dry_result;
@@ -14,8 +15,8 @@ pub mod section_visibility;
 pub mod service_restart_outcome;
 pub mod service_row_state;
 pub mod shelly_update;
-pub mod snooze_state;
 pub mod snapshot_group;
 pub mod snapshot_retention_period;
+pub mod snooze_state;
 pub mod tray_state;
 pub mod update_error;
