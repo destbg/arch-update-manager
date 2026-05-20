@@ -16,6 +16,7 @@ use crate::ui::dialogs::show_error_dialog;
 use crate::ui::downgrade_dialog::show_downgrade_dialog;
 use crate::ui::main_window::load_packages;
 use crate::ui::package_files_dialog::show_package_files_dialog;
+use crate::ui::package_list::refresh_favorite_button;
 
 pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f64, y: f64) {
     let Some(window) = anchor.root().and_downcast::<ApplicationWindow>() else {
@@ -168,11 +169,13 @@ fn add_separator(parent: &GtkBox) {
 
 fn toggle_favorite(window: &ApplicationWindow, name: &str) {
     let mut settings = load_settings();
-    if settings.favorite_packages.iter().any(|p| p == name) {
+    let is_now_favorite = if settings.favorite_packages.iter().any(|p| p == name) {
         settings.favorite_packages.retain(|p| p != name);
+        false
     } else {
         settings.favorite_packages.push(name.to_string());
-    }
+        true
+    };
     if let Err(e) = save_settings(&settings) {
         show_error_dialog(
             window.upcast_ref::<gtk4::Window>(),
@@ -181,7 +184,7 @@ fn toggle_favorite(window: &ApplicationWindow, name: &str) {
         );
         return;
     }
-    reload_package_list(window);
+    refresh_favorite_button(name, is_now_favorite);
 }
 
 fn toggle_blacklist(window: &ApplicationWindow, name: &str, add: bool) {
@@ -202,7 +205,7 @@ fn toggle_blacklist(window: &ApplicationWindow, name: &str, add: bool) {
     reload_package_list(window);
 }
 
-fn reload_package_list(window: &ApplicationWindow) {
+pub fn reload_package_list(window: &ApplicationWindow) {
     let Some(main_box) = window.child().and_downcast::<GtkBox>() else {
         return;
     };

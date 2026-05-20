@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use crate::helpers::pacman_cache::{list_cached_versions, package_path_to_string};
 use crate::models::cached_version::CachedVersion;
+use crate::ui::context_menu::reload_package_list;
 use crate::ui::terminal_page::run_command_in_dialog;
 
 pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_version: &str) {
@@ -115,7 +116,14 @@ pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_
 
         let command = build_downgrade_command(&target);
         dialog.close();
-        run_command_in_dialog(parent_clone.upcast_ref::<gtk4::Window>(), &command, || {});
+        let window_for_reload = parent_clone.clone();
+        run_command_in_dialog(
+            parent_clone.upcast_ref::<gtk4::Window>(),
+            &command,
+            move || {
+                reload_package_list(&window_for_reload);
+            },
+        );
     });
 
     dialog.show();

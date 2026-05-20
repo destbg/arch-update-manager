@@ -4,7 +4,7 @@ use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::context_menu::show_package_context_menu;
 use gio::ListStore;
-use glib::{clone, format_size};
+use glib::{WeakRef, clone, format_size};
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, CustomFilter, CustomSorter,
@@ -12,7 +12,46 @@ use gtk4::{
     SortListModel, Statusbar, ToggleButton, gdk,
 };
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
+
+thread_local! {
+    static FAVORITE_BUTTONS: RefCell<HashMap<String, WeakRef<ToggleButton>>> =
+        RefCell::new(HashMap::new());
+}
+
+pub fn refresh_favorite_button(name: &str, is_favorite: bool) {
+    FAVORITE_BUTTONS.with(|map| {
+        let map = map.borrow();
+        let Some(weak) = map.get(name) else {
+            return;
+        };
+        let Some(button) = weak.upgrade() else {
+            return;
+        };
+        let handler = unsafe { button.steal_data::<glib::SignalHandlerId>("fav_handler") };
+        if let Some(handler_id) = handler {
+            button.block_signal(&handler_id);
+            button.set_active(is_favorite);
+            button.set_icon_name(if is_favorite {
+                "starred-symbolic"
+            } else {
+                "non-starred-symbolic"
+            });
+            button.unblock_signal(&handler_id);
+            unsafe {
+                button.set_data("fav_handler", handler_id);
+            }
+        } else {
+            button.set_active(is_favorite);
+            button.set_icon_name(if is_favorite {
+                "starred-symbolic"
+            } else {
+                "non-starred-symbolic"
+            });
+        }
+    });
+}
 
 pub fn create_package_list(
     search_entry: &SearchEntry,
@@ -123,6 +162,7 @@ fn create_favorite_column(column_view: &ColumnView) {
             "non-starred-symbolic"
         });
 
+        let pkg_name_for_handler = pkg_name.clone();
         let handler_id = button.connect_toggled(move |btn| {
             let mut s = load_settings();
             let is_active = btn.is_active();
@@ -132,18 +172,23 @@ fn create_favorite_column(column_view: &ColumnView) {
                 "non-starred-symbolic"
             });
             if is_active {
-                if !s.favorite_packages.contains(&pkg_name) {
-                    s.favorite_packages.push(pkg_name.clone());
+                if !s.favorite_packages.contains(&pkg_name_for_handler) {
+                    s.favorite_packages.push(pkg_name_for_handler.clone());
                 }
             } else {
-                s.favorite_packages.retain(|p| p != &pkg_name);
+                s.favorite_packages.retain(|p| p != &pkg_name_for_handler);
             }
             let _ = save_settings(&s);
         });
 
         unsafe {
             button.set_data("fav_handler", handler_id);
+            button.set_data("fav_pkg_name", pkg_name.clone());
         }
+
+        FAVORITE_BUTTONS.with(|map| {
+            map.borrow_mut().insert(pkg_name, button.downgrade());
+        });
     });
 
     factory.connect_unbind(move |_factory, item| {
@@ -152,6 +197,11 @@ fn create_favorite_column(column_view: &ColumnView) {
         unsafe {
             if let Some(handler_id) = button.steal_data::<glib::SignalHandlerId>("fav_handler") {
                 button.disconnect(handler_id);
+            }
+            if let Some(name) = button.steal_data::<String>("fav_pkg_name") {
+                FAVORITE_BUTTONS.with(|map| {
+                    map.borrow_mut().remove(&name);
+                });
             }
         }
     });
