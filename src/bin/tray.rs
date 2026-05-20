@@ -39,8 +39,8 @@ impl ArchUpdateTray {
 
     fn run_check(&self) {
         self.expect_check_notification.store(true, Ordering::SeqCst);
-        if let Err(e) = std::process::Command::new("systemctl")
-            .args(["--user", "start", "arch-update-manager-check.service"])
+        if let Err(e) = std::process::Command::new("arch-update-manager-check")
+            .arg("--manual")
             .status()
         {
             eprintln!("Failed to trigger check: {}", e);

@@ -13,6 +13,7 @@ use arch_update_manager::helpers::snooze::current_snooze_until;
 use arch_update_manager::models::tray_state::{TrayState, state_dir, state_file};
 
 fn main() {
+    let manual = std::env::args().any(|a| a == "--manual");
     let settings = load_settings();
 
     if let Some(until) = current_snooze_until() {
@@ -22,11 +23,11 @@ fn main() {
         );
         return;
     }
-    if settings.skip_check_on_metered && is_network_metered() {
+    if !manual && settings.skip_check_on_metered && is_network_metered() {
         eprintln!("Skipping update check: network is metered.");
         return;
     }
-    if settings.skip_check_on_battery && is_on_battery() {
+    if !manual && settings.skip_check_on_battery && is_on_battery() {
         eprintln!("Skipping update check: running on battery.");
         return;
     }
