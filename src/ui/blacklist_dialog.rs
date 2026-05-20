@@ -1,6 +1,7 @@
 use gtk4::prelude::*;
 
 use crate::helpers::pacman_ignore::{list_managed_ignores, remove_from_ignore_pkg};
+use crate::helpers::tray_integration::trigger_check_service;
 
 pub fn show_manage_blacklist_dialog(parent: &gtk4::Window) {
     let dialog = gtk4::Dialog::builder()
@@ -123,7 +124,7 @@ fn build_row(pkg: &str, list_box: &gtk4::ListBox, empty_label: &gtk4::Label) -> 
             eprintln!("Failed to remove {} from IgnorePkg: {}", pkg_clone, e);
             return;
         }
-        crate::helpers::tray_integration::trigger_check_service();
+        trigger_check_service();
         rebuild_list(&list_box_clone, &empty_label_clone);
     });
     hbox.append(&remove_btn);

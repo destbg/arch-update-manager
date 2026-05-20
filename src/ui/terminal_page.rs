@@ -9,7 +9,8 @@ use vte4::{Terminal, TerminalExt};
 use crate::helpers::get_navigation_stack::get_navigation_stack;
 use crate::helpers::settings::load_settings;
 use crate::helpers::terminal::spawn_terminal;
-use crate::ui::main_window::load_packages;
+use crate::helpers::tray_integration::trigger_check_service;
+use crate::ui::main_window::{POST_UPDATE_PAGE, load_packages};
 use crate::ui::post_update_page::{reset_post_update_page, run_post_update_detections};
 
 pub fn create_terminal_page() -> GtkBox {
@@ -113,7 +114,7 @@ pub fn create_terminal_page() -> GtkBox {
             let exit = *last_exit_btn.lock().unwrap();
             let settings = load_settings();
             if exit == 0 {
-                crate::helpers::tray_integration::trigger_check_service();
+                trigger_check_service();
             }
             if exit == 0 && settings.run_post_update_checks {
                 go_to_post_update(&main_box);
@@ -246,7 +247,7 @@ fn go_to_post_update(main_box: &GtkBox) {
         return;
     }
 
-    crate::ui::main_window::POST_UPDATE_PAGE.with(|cell| {
+    POST_UPDATE_PAGE.with(|cell| {
         if let Some(page) = cell.borrow().as_ref() {
             reset_post_update_page(page);
         }

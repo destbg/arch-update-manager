@@ -5,12 +5,15 @@ use crate::helpers::flatpak::build_flatpak_update_command;
 use crate::helpers::get_navigation_stack::get_navigation_stack;
 use crate::helpers::pacman_repos::get_repository_groups;
 use crate::helpers::settings::load_settings;
+use crate::helpers::snapper::{
+    build_snapper_snapshot_command, is_snap_pac_installed, is_snapper_installed,
+};
 use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_snapshot};
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
-use crate::ui::main_window::load_packages;
+use crate::ui::main_window::{find_favorites_column, find_package_store, load_packages};
 use crate::ui::package_list::{save_unselected_from_store, update_statusbar};
 use crate::ui::settings_dialog::show_settings_dialog;
 use gio::ListStore;
@@ -105,8 +108,8 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                     let settings = load_settings();
                     let create_snapshot = settings.create_timeshift_snapshot;
                     let create_snapper = settings.create_snapper_snapshot
-                        && crate::helpers::snapper::is_snapper_installed()
-                        && !crate::helpers::snapper::is_snap_pac_installed();
+                        && is_snapper_installed()
+                        && !is_snap_pac_installed();
 
                     let mut message = String::from("Install selected updates?");
                     if create_snapshot {
@@ -169,8 +172,8 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
             move |_| {
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
                     let settings = load_settings();
-                    let favorites_column = crate::ui::main_window::find_favorites_column(&window);
-                    let package_store = crate::ui::main_window::find_package_store(&window);
+                    let favorites_column = find_favorites_column(&window);
+                    let package_store = find_package_store(&window);
                     show_settings_dialog(&window, &settings, favorites_column, package_store);
                 }
             }
@@ -552,7 +555,7 @@ exit $expect_status)"#,
     };
 
     let snapper_cmd = if create_snapper {
-        Some(crate::helpers::snapper::build_snapper_snapshot_command())
+        Some(build_snapper_snapshot_command())
     } else {
         None
     };

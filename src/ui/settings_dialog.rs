@@ -5,15 +5,22 @@ use std::rc::Rc;
 
 use crate::{
     helpers::{
+        aur::is_command_available,
         pacman_repos::get_repository_groups,
         settings::{get_available_aur_helpers, load_settings, save_settings},
-        tray_integration::apply_tray_state,
+        snapper::{is_snap_pac_installed, is_snapper_installed},
+        tray_integration::{
+            apply_check_interval, apply_tray_state, has_systemd_user_session, kick_tray,
+        },
     },
     models::{
         app_settings::AppSettings, snapshot_group::SnapshotGroup,
         snapshot_retention_period::SnapshotRetentionPeriod,
     },
-    ui::favorites_dialog,
+    ui::{
+        blacklist_dialog::show_manage_blacklist_dialog,
+        favorites_dialog::show_manage_favorites_dialog,
+    },
 };
 
 pub fn show_settings_dialog(
@@ -58,6 +65,7 @@ pub fn show_settings_dialog(
         only_favorites_check,
         menu_only_favorites_check,
         notify_check,
+        check_interval_spin,
     ) = create_system_tray_group(settings, &general_container);
     stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
 
@@ -114,6 +122,7 @@ pub fn show_settings_dialog(
         let only_favorites_check = only_favorites_check.clone();
         let menu_only_favorites_check = menu_only_favorites_check.clone();
         let notify_check = notify_check.clone();
+        let check_interval_spin = check_interval_spin.clone();
         let show_desc_check = show_desc_check.clone();
 
         Rc::new(move || {
@@ -177,6 +186,7 @@ pub fn show_settings_dialog(
                 system_tray_check.is_active() && menu_only_favorites_check.is_active();
             new_settings.show_update_notifications =
                 system_tray_check.is_active() && notify_check.is_active();
+            new_settings.check_interval_minutes = (check_interval_spin.value() as u32).max(1);
             new_settings.show_package_descriptions = show_desc_check.is_active();
 
             if let Err(e) = save_settings(&new_settings) {
@@ -289,12 +299,18 @@ pub fn show_settings_dialog(
     let always_visible_check_weak = always_visible_check.clone();
     let only_favorites_check_weak = only_favorites_check.clone();
     let menu_only_favorites_check_weak = menu_only_favorites_check.clone();
+    let check_interval_spin_weak = check_interval_spin.clone();
     system_tray_check.connect_toggled(move |check| {
         notify_check_weak.set_sensitive(check.is_active());
         always_visible_check_weak.set_sensitive(check.is_active());
         only_favorites_check_weak.set_sensitive(check.is_active());
         menu_only_favorites_check_weak.set_sensitive(check.is_active());
+        check_interval_spin_weak.set_sensitive(check.is_active());
         save_all_clone();
+        if check.is_active() {
+            let minutes = (check_interval_spin_weak.value() as u32).max(1);
+            apply_check_interval(minutes);
+        }
         apply_tray_state(check.is_active());
     });
 
@@ -310,7 +326,7 @@ pub fn show_settings_dialog(
             only_favorites_for_excl.set_active(false);
         }
         save_all_clone();
-        crate::helpers::tray_integration::kick_tray();
+        kick_tray();
     });
 
     let save_all_clone = save_all.clone();
@@ -320,13 +336,20 @@ pub fn show_settings_dialog(
             always_visible_for_excl.set_active(false);
         }
         save_all_clone();
-        crate::helpers::tray_integration::kick_tray();
+        kick_tray();
     });
 
     let save_all_clone = save_all.clone();
     menu_only_favorites_check.connect_toggled(move |_| {
         save_all_clone();
-        crate::helpers::tray_integration::kick_tray();
+        kick_tray();
+    });
+
+    let save_all_clone = save_all.clone();
+    check_interval_spin.connect_value_changed(move |spin| {
+        save_all_clone();
+        let minutes = (spin.value() as u32).max(1);
+        apply_check_interval(minutes);
     });
 
     let save_all_clone = save_all.clone();
@@ -421,8 +444,9 @@ fn create_system_tray_group(
     gtk4::CheckButton,
     gtk4::CheckButton,
     gtk4::CheckButton,
+    gtk4::SpinButton,
 ) {
-    let systemd_available = crate::helpers::tray_integration::has_systemd_user_session();
+    let systemd_available = has_systemd_user_session();
 
     let section = create_preference_group(
         "System Tray",
@@ -471,6 +495,26 @@ fn create_system_tray_group(
     notify_check.set_margin_start(24);
     section.append(&notify_check);
 
+    let interval_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    interval_box.set_margin_top(8);
+    interval_box.set_margin_start(24);
+    interval_box.set_hexpand(true);
+
+    let interval_label = gtk4::Label::new(Some("Check for updates every (minutes)"));
+    interval_label.set_halign(gtk4::Align::Start);
+    interval_label.set_hexpand(true);
+    interval_box.append(&interval_label);
+
+    let check_interval_spin = gtk4::SpinButton::with_range(5.0, 1440.0, 5.0);
+    check_interval_spin.set_value(settings.check_interval_minutes.max(1) as f64);
+    check_interval_spin.add_css_class("settings-spin");
+    check_interval_spin.set_halign(gtk4::Align::End);
+    check_interval_spin.set_sensitive(systemd_available && settings.enable_system_tray);
+    interval_box.append(&check_interval_spin);
+
+    interval_label.set_sensitive(systemd_available && settings.enable_system_tray);
+    section.append(&interval_box);
+
     if !systemd_available {
         let warning = gtk4::Label::new(Some(
             "A systemd user session is required to use the tray. This system does not appear to have one available.",
@@ -491,13 +535,14 @@ fn create_system_tray_group(
         only_favorites_check,
         menu_only_favorites_check,
         notify_check,
+        check_interval_spin,
     );
 }
 
 fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> SnapshotGroup {
-    let has_timeshift = crate::helpers::aur::is_command_available("timeshift");
-    let has_snapper = crate::helpers::snapper::is_snapper_installed();
-    let snap_pac_installed = crate::helpers::snapper::is_snap_pac_installed();
+    let has_timeshift = is_command_available("timeshift");
+    let has_snapper = is_snapper_installed();
+    let snap_pac_installed = is_snap_pac_installed();
 
     let section = create_preference_group(
         "System Snapshots",
@@ -749,7 +794,7 @@ fn create_favorites_group(
     manage_btn.set_halign(gtk4::Align::Start);
     let parent_clone = parent.clone();
     manage_btn.connect_clicked(move |_| {
-        favorites_dialog::show_manage_favorites_dialog(parent_clone.upcast_ref::<gtk4::Window>());
+        show_manage_favorites_dialog(parent_clone.upcast_ref::<gtk4::Window>());
     });
     section.append(&manage_btn);
     main_container.append(&section);
@@ -974,9 +1019,7 @@ fn create_blacklist_group(main_container: &gtk4::Box, parent: &ApplicationWindow
     manage_btn.set_halign(gtk4::Align::Start);
     let parent_clone = parent.clone();
     manage_btn.connect_clicked(move |_| {
-        crate::ui::blacklist_dialog::show_manage_blacklist_dialog(
-            parent_clone.upcast_ref::<gtk4::Window>(),
-        );
+        show_manage_blacklist_dialog(parent_clone.upcast_ref::<gtk4::Window>());
     });
     section.append(&manage_btn);
 

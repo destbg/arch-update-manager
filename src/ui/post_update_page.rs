@@ -8,10 +8,24 @@ use shlex::try_quote;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::helpers::elevated::spawn_as_user_or_root;
+use crate::helpers::flatpak::{build_flatpak_uninstall_command, get_unused_flatpak_runtimes};
+use crate::helpers::post_update::{
+    get_cache_candidates, get_orphan_packages, get_pacnew_files, get_services_needing_restart,
+    is_kernel_reboot_pending, is_meld_available, restart_service,
+};
+use crate::helpers::repo_switches::detect_repo_switches;
+use crate::helpers::settings::load_settings;
+use crate::models::cache_candidates::CacheCandidates;
 use crate::models::post_update_page::PostUpdatePage;
+use crate::models::repo_switch::{RepoSwitch, SwitchKind};
 use crate::models::section::Section;
 use crate::models::section_visibility::SectionVisibility;
+use crate::models::service_restart_outcome::ServiceRestartOutcome;
 use crate::models::service_row_state::ServiceRowState;
+use crate::ui::main_window::POST_UPDATE_PAGE;
+use crate::ui::pacnew_diff::show_pacnew_diff_dialog;
+use crate::ui::terminal_page::run_command_in_dialog;
 
 pub fn create_post_update_page() -> PostUpdatePage {
     let container = GtkBox::new(Orientation::Vertical, 0);
@@ -426,17 +440,13 @@ fn run_orphan_removal(window: &ApplicationWindow, packages: Vec<String>) {
 
 pub fn run_post_update_command(window: &ApplicationWindow, command: &str) {
     let window_for_refresh = window.clone();
-    crate::ui::terminal_page::run_command_in_dialog(
-        window.upcast_ref::<gtk4::Window>(),
-        command,
-        move || {
-            refresh_post_update(&window_for_refresh);
-        },
-    );
+    run_command_in_dialog(window.upcast_ref::<gtk4::Window>(), command, move || {
+        refresh_post_update(&window_for_refresh);
+    });
 }
 
 pub fn refresh_post_update(window: &ApplicationWindow) {
-    crate::ui::main_window::POST_UPDATE_PAGE.with(|cell| {
+    POST_UPDATE_PAGE.with(|cell| {
         if let Some(page) = cell.borrow().as_ref() {
             reset_post_update_page(page);
         }
@@ -465,7 +475,7 @@ pub fn set_pacnew_section(page: &PostUpdatePage, files: Vec<String>, window: &Ap
     caption.set_wrap(true);
     section.card.append(&caption);
 
-    let meld_available = crate::helpers::post_update::is_meld_available();
+    let meld_available = is_meld_available();
 
     let list_box = ListBox::new();
     list_box.set_selection_mode(SelectionMode::None);
@@ -530,7 +540,7 @@ fn build_pacnew_row(
     diff_btn.connect_clicked(move |btn| {
         let parent = btn.root().and_downcast::<gtk4::Window>();
         if let Some(parent_window) = parent {
-            crate::ui::pacnew_diff::show_pacnew_diff_dialog(&parent_window, &path_for_diff);
+            show_pacnew_diff_dialog(&parent_window, &path_for_diff);
         }
     });
     row_box.append(&diff_btn);
@@ -551,7 +561,7 @@ fn build_pacnew_row(
 
 fn open_meld(saved_path: &str) {
     let original = strip_pacnew_suffix(saved_path);
-    crate::helpers::elevated::spawn_as_user_or_root("meld", &[&original, saved_path]);
+    spawn_as_user_or_root("meld", &[&original, saved_path]);
 }
 
 fn strip_pacnew_suffix(path: &str) -> String {
@@ -647,7 +657,7 @@ pub fn set_flatpak_unused_section(
             return;
         }
 
-        if let Some(command) = crate::helpers::flatpak::build_flatpak_uninstall_command(&selected) {
+        if let Some(command) = build_flatpak_uninstall_command(&selected) {
             run_post_update_command(&window_clone, &command);
         }
     });
@@ -659,7 +669,7 @@ pub fn set_flatpak_unused_section(
 
 pub fn set_resolutions_section(
     page: &PostUpdatePage,
-    switches: Vec<crate::models::repo_switch::RepoSwitch>,
+    switches: Vec<RepoSwitch>,
     window: &ApplicationWindow,
 ) {
     if switches.is_empty() {
@@ -686,8 +696,7 @@ pub fn set_resolutions_section(
     list_box.set_selection_mode(SelectionMode::None);
     list_box.add_css_class("boxed-list");
 
-    let checkboxes: Rc<RefCell<Vec<(crate::models::repo_switch::RepoSwitch, CheckButton)>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    let checkboxes: Rc<RefCell<Vec<(RepoSwitch, CheckButton)>>> = Rc::new(RefCell::new(Vec::new()));
 
     for switch in &switches {
         let row = ListBoxRow::new();
@@ -771,8 +780,7 @@ pub fn set_resolutions_section(
     refresh_all_clear(page);
 }
 
-fn format_resolution_title(switch: &crate::models::repo_switch::RepoSwitch) -> String {
-    use crate::models::repo_switch::SwitchKind;
+fn format_resolution_title(switch: &RepoSwitch) -> String {
     let escape = |s: &str| glib::markup_escape_text(s).to_string();
     return match switch.kind {
         SwitchKind::RepoChange => format!(
@@ -790,8 +798,7 @@ fn format_resolution_title(switch: &crate::models::repo_switch::RepoSwitch) -> S
     };
 }
 
-fn format_resolution_subtitle(switch: &crate::models::repo_switch::RepoSwitch) -> String {
-    use crate::models::repo_switch::SwitchKind;
+fn format_resolution_subtitle(switch: &RepoSwitch) -> String {
     return match switch.kind {
         SwitchKind::RepoChange => {
             if switch.installed_version == switch.target_version {
@@ -929,14 +936,11 @@ fn kick_off_service_restart(rows: Rc<RefCell<Vec<ServiceRowState>>>, index: usiz
     }
 
     glib::spawn_future_local(async move {
-        let outcome = gio::spawn_blocking(move || {
-            crate::helpers::post_update::restart_service(&service_name)
-        })
-        .await;
+        let outcome = gio::spawn_blocking(move || restart_service(&service_name)).await;
 
         let outcome = match outcome {
             Ok(o) => o,
-            Err(e) => crate::models::service_restart_outcome::ServiceRestartOutcome {
+            Err(e) => ServiceRestartOutcome {
                 success: false,
                 exit_code: None,
                 stdout: String::new(),
@@ -986,9 +990,7 @@ fn clear_box(container: &GtkBox) {
     }
 }
 
-fn format_service_error(
-    outcome: &crate::models::service_restart_outcome::ServiceRestartOutcome,
-) -> String {
+fn format_service_error(outcome: &ServiceRestartOutcome) -> String {
     let mut out = String::new();
 
     if let Some(code) = outcome.exit_code {
@@ -1054,7 +1056,7 @@ fn show_service_error_dialog(parent: Option<&gtk4::Window>, service_name: &str, 
 
 pub fn set_cache_section(
     page: &PostUpdatePage,
-    candidates: crate::models::cache_candidates::CacheCandidates,
+    candidates: CacheCandidates,
     keep_old: u32,
     keep_uninstalled: u32,
     window: &ApplicationWindow,
@@ -1157,14 +1159,13 @@ pub fn set_cache_section(
 }
 
 pub fn run_post_update_detections(window: ApplicationWindow) {
-    let settings = crate::helpers::settings::load_settings();
+    let settings = load_settings();
     let keep_old = settings.keep_old_packages;
     let keep_uninstalled = settings.keep_uninstalled_packages;
     let flatpak_enabled = settings.enable_flatpak_support;
 
     glib::spawn_future_local(async move {
-        let orphans_result =
-            gio::spawn_blocking(|| crate::helpers::post_update::get_orphan_packages()).await;
+        let orphans_result = gio::spawn_blocking(|| get_orphan_packages()).await;
         let orphans = match orphans_result {
             Ok(Ok(list)) => list,
             Ok(Err(e)) => {
@@ -1177,10 +1178,8 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
             }
         };
 
-        let cache_result = gio::spawn_blocking(move || {
-            crate::helpers::post_update::get_cache_candidates(keep_old, keep_uninstalled)
-        })
-        .await;
+        let cache_result =
+            gio::spawn_blocking(move || get_cache_candidates(keep_old, keep_uninstalled)).await;
         let cache = match cache_result {
             Ok(Ok(c)) => c,
             Ok(Err(e)) => {
@@ -1193,13 +1192,11 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
             }
         };
 
-        let reboot_pending =
-            gio::spawn_blocking(|| crate::helpers::post_update::is_kernel_reboot_pending())
-                .await
-                .unwrap_or(false);
+        let reboot_pending = gio::spawn_blocking(|| is_kernel_reboot_pending())
+            .await
+            .unwrap_or(false);
 
-        let pacnew_result =
-            gio::spawn_blocking(|| crate::helpers::post_update::get_pacnew_files()).await;
+        let pacnew_result = gio::spawn_blocking(|| get_pacnew_files()).await;
         let pacnew = match pacnew_result {
             Ok(Ok(list)) => list,
             Ok(Err(e)) => {
@@ -1212,9 +1209,7 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
             }
         };
 
-        let services_result =
-            gio::spawn_blocking(|| crate::helpers::post_update::get_services_needing_restart())
-                .await;
+        let services_result = gio::spawn_blocking(|| get_services_needing_restart()).await;
         let services = match services_result {
             Ok(Ok(list)) => list,
             Ok(Err(e)) => {
@@ -1227,8 +1222,7 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
             }
         };
 
-        let switches_result =
-            gio::spawn_blocking(|| crate::helpers::repo_switches::detect_repo_switches()).await;
+        let switches_result = gio::spawn_blocking(|| detect_repo_switches()).await;
         let switches = match switches_result {
             Ok(Ok(list)) => list,
             Ok(Err(e)) => {
@@ -1242,9 +1236,7 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
         };
 
         let flatpak_unused = if flatpak_enabled {
-            let result =
-                gio::spawn_blocking(|| crate::helpers::flatpak::get_unused_flatpak_runtimes())
-                    .await;
+            let result = gio::spawn_blocking(|| get_unused_flatpak_runtimes()).await;
             match result {
                 Ok(Ok(list)) => list,
                 Ok(Err(e)) => {
@@ -1260,7 +1252,7 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
             Vec::new()
         };
 
-        crate::ui::main_window::POST_UPDATE_PAGE.with(|cell| {
+        POST_UPDATE_PAGE.with(|cell| {
             if let Some(page) = cell.borrow().as_ref() {
                 set_orphans_section(page, orphans, &window);
                 set_cache_section(page, cache, keep_old, keep_uninstalled, &window);

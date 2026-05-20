@@ -1,7 +1,12 @@
+use crate::constants::FLATPAK_NAME;
 use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::elevated::open_url_as_user;
 use crate::helpers::package_updates::get_package_updates;
+use crate::helpers::pacman_ignore::{
+    add_to_ignore_pkg, is_in_managed_ignore_pkg, list_managed_ignores, remove_from_ignore_pkg,
+};
 use crate::helpers::settings::load_settings;
+use crate::helpers::tray_integration::trigger_check_service;
 use crate::helpers::unselected_packages::load_unselected_packages;
 use crate::models::info_panel::InfoPanel;
 use crate::models::package_object::PackageUpdateObject;
@@ -188,12 +193,11 @@ fn create_main_content(
                 url_button.set_visible(package_data.url.is_some());
 
                 *current_package.borrow_mut() = Some(package_data.name.clone());
-                let is_flatpak = package_data.repository == crate::constants::FLATPAK_NAME;
+                let is_flatpak = package_data.repository == FLATPAK_NAME;
                 if is_flatpak {
                     ignore_button.set_visible(false);
                 } else {
-                    let is_ignored =
-                        crate::helpers::pacman_ignore::is_in_managed_ignore_pkg(&package_data.name);
+                    let is_ignored = is_in_managed_ignore_pkg(&package_data.name);
                     if let Some(handler_id) = ignore_handler_id.borrow().as_ref() {
                         ignore_button.block_signal(handler_id);
                         ignore_button.set_active(is_ignored);
@@ -202,7 +206,7 @@ fn create_main_content(
                         ignore_button.set_active(is_ignored);
                     }
                     ignore_button.set_visible(true);
-                    crate::ui::info_panel::update_ignore_button_tooltip(&ignore_button);
+                    update_ignore_button_tooltip(&ignore_button);
                 }
             } else {
                 info_text.set_text("Select a package to view its information.");
@@ -274,14 +278,14 @@ fn wire_ignore_button(panel: &InfoPanel, stack: &Stack, window: &ApplicationWind
 
             if response == gtk4::ResponseType::Accept {
                 let result = if target_state {
-                    crate::helpers::pacman_ignore::add_to_ignore_pkg(&pkg_d)
+                    add_to_ignore_pkg(&pkg_d)
                 } else {
-                    crate::helpers::pacman_ignore::remove_from_ignore_pkg(&pkg_d)
+                    remove_from_ignore_pkg(&pkg_d)
                 };
                 match result {
                     Ok(()) => {
                         update_ignore_button_tooltip(&btn_d);
-                        crate::helpers::tray_integration::trigger_check_service();
+                        trigger_check_service();
                         if let Some(content_box) = stack_d
                             .child_by_name("content")
                             .and_downcast::<GtkBox>()
@@ -383,7 +387,7 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
 
         match packages_result {
             Ok(Ok(mut packages)) => {
-                let blacklisted = crate::helpers::pacman_ignore::list_managed_ignores();
+                let blacklisted = list_managed_ignores();
                 if !blacklisted.is_empty() {
                     packages.retain(|p| !blacklisted.contains(&p.name));
                 }

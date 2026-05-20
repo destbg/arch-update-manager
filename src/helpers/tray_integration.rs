@@ -33,11 +33,54 @@ pub fn apply_tray_state(enabled: bool) {
     }
 }
 
+pub fn apply_check_interval(minutes: u32) {
+    let minutes = minutes.max(1);
+    if let Err(e) = write_check_timer_override(minutes) {
+        eprintln!("Failed to write check timer override: {}", e);
+        return;
+    }
+    run_user_systemctl(&["daemon-reload"]);
+    run_user_systemctl(&["try-restart", TIMER_UNIT]);
+}
+
 pub fn has_systemd_user_session() -> bool {
     let Some(uid) = original_user_uid() else {
         return false;
     };
     return PathBuf::from(format!("/run/user/{}/systemd", uid)).exists();
+}
+
+fn write_check_timer_override(minutes: u32) -> std::io::Result<()> {
+    let Some(home) = user_home() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "could not determine user home",
+        ));
+    };
+
+    let dir = PathBuf::from(&home)
+        .join(".config/systemd/user")
+        .join(format!("{}.d", TIMER_UNIT));
+    fs::create_dir_all(&dir)?;
+
+    let path = dir.join("override.conf");
+    let contents = format!(
+        "[Timer]\nOnUnitActiveSec=\nOnUnitActiveSec={}min\n",
+        minutes
+    );
+    fs::write(&path, contents)?;
+
+    chown_to_original_user(&dir);
+    chown_to_original_user(&path);
+    return Ok(());
+}
+
+fn chown_to_original_user(path: &PathBuf) {
+    let Some(user) = get_original_user() else {
+        return;
+    };
+    let target = format!("{0}:{0}", user);
+    let _ = Command::new("chown").arg(&target).arg(path).status();
 }
 
 fn remove_legacy_autostart_file() {

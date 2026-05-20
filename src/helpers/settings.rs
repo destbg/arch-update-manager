@@ -29,6 +29,7 @@ fn default_settings() -> AppSettings {
         run_post_update_checks: true,
         create_snapper_snapshot: false,
         enable_system_tray: false,
+        check_interval_minutes: 60,
         tray_always_visible: false,
         tray_only_favorites: false,
         tray_menu_only_favorites: false,
