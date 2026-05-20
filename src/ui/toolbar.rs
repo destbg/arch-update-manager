@@ -1,5 +1,6 @@
 use crate::constants::{AUR_NAME, FLATPAK_NAME, TIMESHIFT_COMMENT};
 use crate::helpers::aur::install_aur_packages;
+use crate::helpers::elevated::open_url_as_user;
 use crate::helpers::flatpak::build_flatpak_update_command;
 use crate::helpers::get_navigation_stack::get_navigation_stack;
 use crate::helpers::pacman_repos::get_repository_groups;
@@ -143,6 +144,17 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
 
         let separator3 = Separator::new(Orientation::Vertical);
         toolbar.append(&separator3);
+
+        let news_btn = Button::new();
+        news_btn.set_child(Some(&create_button_content(
+            "application-rss+xml-symbolic",
+            "News",
+        )));
+        news_btn.set_tooltip_text(Some("Arch Linux News"));
+        news_btn.connect_clicked(|_| {
+            open_url_as_user("https://archlinux.org/news/");
+        });
+        toolbar.append(&news_btn);
 
         let settings_btn = Button::new();
         settings_btn.set_child(Some(&create_button_content(

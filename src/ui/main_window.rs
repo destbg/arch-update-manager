@@ -1,4 +1,5 @@
 use crate::helpers::decorations::are_decorations_disabled;
+use crate::helpers::elevated::open_url_as_user;
 use crate::helpers::package_updates::get_package_updates;
 use crate::helpers::settings::load_settings;
 use crate::helpers::unselected_packages::load_unselected_packages;
@@ -56,6 +57,15 @@ pub fn build_ui(app: &Application) {
         });
 
         header_bar.pack_end(&settings_button);
+
+        let news_button = Button::from_icon_name("application-rss+xml-symbolic");
+        news_button.set_tooltip_text(Some("Arch Linux News"));
+
+        news_button.connect_clicked(|_| {
+            open_url_as_user("https://archlinux.org/news/");
+        });
+
+        header_bar.pack_end(&news_button);
     }
 
     window.set_titlebar(Some(&header_bar));
