@@ -20,9 +20,9 @@ use crate::ui::toolbar::create_toolbar;
 use gio::ListStore;
 use gtk4::prelude::*;
 use gtk4::{
-    Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn, HeaderBar,
-    Orientation, Paned, ScrolledWindow, Separator, SingleSelection, SortListModel, Stack,
-    Statusbar,
+    Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn,
+    FilterListModel, HeaderBar, Orientation, Paned, ScrolledWindow, SearchBar, SearchEntry,
+    Separator, SingleSelection, SortListModel, Stack, Statusbar,
 };
 use std::cell::RefCell;
 
@@ -129,7 +129,36 @@ fn create_main_content(
 
     let paned = Paned::new(Orientation::Vertical);
 
-    let (list_view, store, statusbar) = create_package_list();
+    let search_entry = SearchEntry::new();
+    search_entry.set_placeholder_text(Some("Filter packages by name or description"));
+    search_entry.set_hexpand(true);
+
+    let (list_view, store, statusbar, filter) = create_package_list(&search_entry);
+
+    let search_bar = SearchBar::new();
+    search_bar.set_child(Some(&search_entry));
+    search_bar.connect_entry(&search_entry);
+    search_bar.set_key_capture_widget(Some(&content_box));
+    search_bar.set_show_close_button(true);
+
+    {
+        let filter = filter.clone();
+        search_entry.connect_search_changed(move |_| {
+            filter.changed(gtk4::FilterChange::Different);
+        });
+    }
+
+    {
+        let search_entry_clear = search_entry.clone();
+        search_bar.connect_notify_local(Some("search-mode-enabled"), move |bar, _| {
+            if !bar.is_search_mode() {
+                search_entry_clear.set_text("");
+            }
+        });
+    }
+
+    content_box.append(&search_bar);
+
     let scrolled = ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Automatic)
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
@@ -344,7 +373,8 @@ fn extract_list_store(column_view: &ColumnView) -> Option<ListStore> {
     let selection_model = column_view.model()?;
     let single = selection_model.downcast_ref::<SingleSelection>()?;
     let sort_model = single.model()?.downcast::<SortListModel>().ok()?;
-    return sort_model.model().and_downcast::<ListStore>();
+    let filter_model = sort_model.model()?.downcast::<FilterListModel>().ok()?;
+    return filter_model.model().and_downcast::<ListStore>();
 }
 
 pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindow) {

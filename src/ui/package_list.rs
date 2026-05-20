@@ -5,11 +5,14 @@ use gio::ListStore;
 use glib::{clone, format_size};
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, CustomSorter, Label, Ordering,
-    Orientation, SingleSelection, SortListModel, Statusbar, ToggleButton,
+    Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, CustomFilter, CustomSorter,
+    FilterListModel, Label, Ordering, Orientation, SearchEntry, SingleSelection, SortListModel,
+    Statusbar, ToggleButton,
 };
 
-pub fn create_package_list() -> (ColumnView, ListStore, Statusbar) {
+pub fn create_package_list(
+    search_entry: &SearchEntry,
+) -> (ColumnView, ListStore, Statusbar, CustomFilter) {
     let store = ListStore::new::<PackageUpdateObject>();
     let statusbar = Statusbar::new();
 
@@ -17,7 +20,24 @@ pub fn create_package_list() -> (ColumnView, ListStore, Statusbar) {
     column_view.set_show_row_separators(true);
     column_view.set_show_column_separators(false);
 
-    let sort_model = SortListModel::new(Some(store.clone()), column_view.sorter());
+    let entry_for_filter = search_entry.clone();
+    let filter = CustomFilter::new(move |obj| {
+        let query = entry_for_filter.text().to_string();
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return true;
+        }
+        let Some(pkg) = obj.downcast_ref::<PackageUpdateObject>() else {
+            return true;
+        };
+        let data = pkg.data();
+        let needle = trimmed.to_lowercase();
+        return data.name.to_lowercase().contains(&needle)
+            || data.description.to_lowercase().contains(&needle);
+    });
+
+    let filter_model = FilterListModel::new(Some(store.clone()), Some(filter.clone()));
+    let sort_model = SortListModel::new(Some(filter_model), column_view.sorter());
     let selection_model = SingleSelection::new(Some(sort_model));
     selection_model.set_autoselect(false);
     selection_model.set_can_unselect(true);
@@ -30,7 +50,7 @@ pub fn create_package_list() -> (ColumnView, ListStore, Statusbar) {
     create_version_column(&column_view);
     create_size_column(&column_view);
 
-    return (column_view, store, statusbar);
+    return (column_view, store, statusbar, filter);
 }
 
 fn package_sorter<F>(key: F) -> CustomSorter

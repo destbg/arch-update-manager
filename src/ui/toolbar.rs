@@ -17,8 +17,9 @@ use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, ColumnView, Frame, Image, Orientation, Paned,
-    ScrolledWindow, Separator, SingleSelection, SortListModel, Stack, Statusbar,
+    ApplicationWindow, Box as GtkBox, Button, ColumnView, FilterListModel, Frame, Image,
+    Orientation, Paned, ScrolledWindow, Separator, SingleSelection, SortListModel, Stack,
+    Statusbar,
 };
 use shlex::try_quote as quote;
 use std::collections::HashMap;
@@ -179,6 +180,11 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
 
     toolbar_container.append(&toolbar);
 
+    let install_btn_for_focus = install_btn.clone();
+    glib::idle_add_local_once(move || {
+        install_btn_for_focus.grab_focus();
+    });
+
     return toolbar_container;
 }
 
@@ -212,6 +218,8 @@ fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Statusbar)> 
         .and_then(|sm| sm.model())
         .and_then(|m| m.downcast::<SortListModel>().ok())
         .and_then(|sm| sm.model())
+        .and_then(|m| m.downcast::<FilterListModel>().ok())
+        .and_then(|fm| fm.model())
         .and_downcast::<ListStore>()
     else {
         return None;
