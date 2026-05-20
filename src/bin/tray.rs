@@ -225,7 +225,7 @@ impl Tray for ArchUpdateTray {
 
         items.push(
             StandardItem {
-                label: "Open Arch Update Manager".into(),
+                label: "Open Update Manager".into(),
                 activate: Box::new(|_: &mut Self| Self::launch_main_app()),
                 ..Default::default()
             }
