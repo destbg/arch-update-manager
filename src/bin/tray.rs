@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -13,7 +13,10 @@ use signal_hook::consts::SIGUSR1;
 use signal_hook::iterator::Signals;
 
 use arch_update_manager::helpers::settings::{load_settings, reload_settings};
+use arch_update_manager::helpers::snooze::{clear_snooze, current_snooze_until, set_snooze};
 use arch_update_manager::models::tray_state::{TrayState, state_file};
+
+static REFRESH_TX: OnceLock<mpsc::Sender<()>> = OnceLock::new();
 
 const FALLBACK_POLL_INTERVAL: Duration = Duration::from_secs(300);
 const ICON_NO_UPDATES: &str = "arch-update-manager";
@@ -50,6 +53,12 @@ impl ArchUpdateTray {
             return count_favorite_updates(&self.state, &settings.favorite_packages);
         }
         return self.state.total();
+    }
+}
+
+fn request_refresh() {
+    if let Some(tx) = REFRESH_TX.get() {
+        let _ = tx.send(());
     }
 }
 
@@ -104,10 +113,15 @@ impl Tray for ArchUpdateTray {
     }
 
     fn tool_tip(&self) -> ToolTip {
-        let title = match self.state.total() {
-            0 => "System is up to date".to_string(),
-            1 => "1 update available".to_string(),
-            n => format!("{} updates available", n),
+        let title = if let Some(until) = current_snooze_until() {
+            let local: DateTime<Local> = until.into();
+            format!("Snoozed until {}", local.format("%d %b %H:%M"))
+        } else {
+            match self.state.total() {
+                0 => "System is up to date".to_string(),
+                1 => "1 update available".to_string(),
+                n => format!("{} updates available", n),
+            }
         };
 
         let description = match self.state.last_check {
@@ -131,8 +145,7 @@ impl Tray for ArchUpdateTray {
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let settings = load_settings();
-        let filter_to_favorites =
-            settings.tray_menu_only_favorites && settings.enable_favorites;
+        let filter_to_favorites = settings.tray_menu_only_favorites && settings.enable_favorites;
 
         let packages = if filter_to_favorites {
             filter_favorite_entries(&self.state.packages, &settings.favorite_packages)
@@ -150,11 +163,17 @@ impl Tray for ArchUpdateTray {
             self.state.flatpak.clone()
         };
 
+        let snooze_until = current_snooze_until();
         let visible_total = packages.len() + aur.len() + flatpak.len();
-        let count_label = match visible_total {
-            0 => "System is up to date".to_string(),
-            1 => "1 update available".to_string(),
-            n => format!("{} updates available", n),
+        let count_label = if let Some(until) = snooze_until {
+            let local: DateTime<Local> = until.into();
+            format!("Snoozed until {}", local.format("%d %b %H:%M"))
+        } else {
+            match visible_total {
+                0 => "System is up to date".to_string(),
+                1 => "1 update available".to_string(),
+                n => format!("{} updates available", n),
+            }
         };
 
         let mut items: Vec<MenuItem<Self>> = vec![
@@ -216,11 +235,14 @@ impl Tray for ArchUpdateTray {
         items.push(
             StandardItem {
                 label: "Check for updates".into(),
+                enabled: snooze_until.is_none(),
                 activate: Box::new(|s: &mut Self| s.run_check()),
                 ..Default::default()
             }
             .into(),
         );
+
+        items.push(build_snooze_menu(snooze_until));
 
         items.push(
             StandardItem {
@@ -233,6 +255,58 @@ impl Tray for ArchUpdateTray {
 
         return items;
     }
+}
+
+fn build_snooze_menu(snooze_until: Option<DateTime<chrono::Utc>>) -> MenuItem<ArchUpdateTray> {
+    let mut submenu: Vec<MenuItem<ArchUpdateTray>> = Vec::new();
+
+    if let Some(until) = snooze_until {
+        let local: DateTime<Local> = until.into();
+        submenu.push(
+            StandardItem {
+                label: format!("Cancel snooze (until {})", local.format("%d %b %H:%M")),
+                activate: Box::new(|_: &mut ArchUpdateTray| {
+                    if let Err(e) = clear_snooze() {
+                        eprintln!("Failed to clear snooze: {}", e);
+                        return;
+                    }
+                    request_refresh();
+                }),
+                ..Default::default()
+            }
+            .into(),
+        );
+        submenu.push(MenuItem::Separator);
+    }
+
+    for hours in [1u32, 4, 8, 24] {
+        let label = if hours == 1 {
+            "1 hour".to_string()
+        } else {
+            format!("{} hours", hours)
+        };
+        submenu.push(
+            StandardItem {
+                label,
+                activate: Box::new(move |_: &mut ArchUpdateTray| {
+                    if let Err(e) = set_snooze(hours) {
+                        eprintln!("Failed to snooze: {}", e);
+                        return;
+                    }
+                    request_refresh();
+                }),
+                ..Default::default()
+            }
+            .into(),
+        );
+    }
+
+    return SubMenu {
+        label: "Snooze".into(),
+        submenu,
+        ..Default::default()
+    }
+    .into();
 }
 
 fn make_submenu(title: &str, entries: &[String]) -> MenuItem<ArchUpdateTray> {
@@ -294,6 +368,7 @@ fn main() {
     let expect_check_for_thread = expect_check_notification.clone();
 
     let (tx, rx) = mpsc::channel::<()>();
+    let _ = REFRESH_TX.set(tx.clone());
 
     let tx_signal = tx.clone();
     thread::spawn(move || {
@@ -322,8 +397,7 @@ fn main() {
             let settings = reload_settings();
             let new_state = read_state(&path_clone);
 
-            let only_favorites =
-                settings.tray_only_favorites && settings.enable_favorites;
+            let only_favorites = settings.tray_only_favorites && settings.enable_favorites;
 
             let (changed, prev_last_check, prev_relevant_total) = {
                 let prev = last_seen_clone.lock().unwrap();
@@ -352,7 +426,8 @@ fn main() {
                 _ => false,
             };
 
-            if is_new_check {
+            let snoozed = current_snooze_until().is_some();
+            if is_new_check && !snoozed {
                 let manual = expect_check_for_thread.swap(false, Ordering::SeqCst);
                 if manual {
                     fire_check_complete_notification(new_relevant_total);
@@ -410,10 +485,7 @@ fn fire_check_complete_notification(count: usize) {
     let (summary, body) = match count {
         0 => ("Check Complete", "System is up to date".to_string()),
         1 => ("Arch Updates Available", "1 update available".to_string()),
-        n => (
-            "Arch Updates Available",
-            format!("{} updates available", n),
-        ),
+        n => ("Arch Updates Available", format!("{} updates available", n)),
     };
 
     thread::spawn(move || {

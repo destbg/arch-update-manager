@@ -15,6 +15,7 @@ pub mod power;
 pub mod repo_switches;
 pub mod settings;
 pub mod snapper;
+pub mod snooze;
 pub mod terminal;
 pub mod timeshift;
 pub mod tray_integration;

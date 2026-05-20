@@ -9,11 +9,19 @@ use arch_update_manager::helpers::network::is_network_metered;
 use arch_update_manager::helpers::pacman_ignore::list_managed_ignores;
 use arch_update_manager::helpers::power::is_on_battery;
 use arch_update_manager::helpers::settings::load_settings;
+use arch_update_manager::helpers::snooze::current_snooze_until;
 use arch_update_manager::models::tray_state::{TrayState, state_dir, state_file};
 
 fn main() {
     let settings = load_settings();
 
+    if let Some(until) = current_snooze_until() {
+        eprintln!(
+            "Skipping update check: snoozed until {}.",
+            until.format("%Y-%m-%d %H:%M:%S UTC")
+        );
+        return;
+    }
     if settings.skip_check_on_metered && is_network_metered() {
         eprintln!("Skipping update check: network is metered.");
         return;
