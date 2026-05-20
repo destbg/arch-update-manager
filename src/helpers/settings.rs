@@ -31,6 +31,7 @@ fn default_settings() -> AppSettings {
         enable_system_tray: false,
         tray_always_visible: false,
         tray_only_favorites: false,
+        tray_menu_only_favorites: false,
         show_update_notifications: false,
         show_package_descriptions: true,
     };

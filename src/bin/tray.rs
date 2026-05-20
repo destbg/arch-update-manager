@@ -66,6 +66,17 @@ fn count_favorite_updates(state: &TrayState, favorites: &[String]) -> usize {
         .count();
 }
 
+fn filter_favorite_entries(entries: &[String], favorites: &[String]) -> Vec<String> {
+    return entries
+        .iter()
+        .filter(|line| {
+            let name = line.split_whitespace().next().unwrap_or("");
+            favorites.iter().any(|f| f == name)
+        })
+        .cloned()
+        .collect();
+}
+
 impl Tray for ArchUpdateTray {
     fn id(&self) -> String {
         return "arch-update-manager-tray".into();
@@ -119,9 +130,28 @@ impl Tray for ArchUpdateTray {
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
-        let total = self.state.total();
+        let settings = load_settings();
+        let filter_to_favorites =
+            settings.tray_menu_only_favorites && settings.enable_favorites;
 
-        let count_label = match total {
+        let packages = if filter_to_favorites {
+            filter_favorite_entries(&self.state.packages, &settings.favorite_packages)
+        } else {
+            self.state.packages.clone()
+        };
+        let aur = if filter_to_favorites {
+            filter_favorite_entries(&self.state.aur, &settings.favorite_packages)
+        } else {
+            self.state.aur.clone()
+        };
+        let flatpak = if filter_to_favorites {
+            filter_favorite_entries(&self.state.flatpak, &settings.favorite_packages)
+        } else {
+            self.state.flatpak.clone()
+        };
+
+        let visible_total = packages.len() + aur.len() + flatpak.len();
+        let count_label = match visible_total {
             0 => "System is up to date".to_string(),
             1 => "1 update available".to_string(),
             n => format!("{} updates available", n),
@@ -136,24 +166,21 @@ impl Tray for ArchUpdateTray {
             .into(),
         ];
 
-        if !self.state.packages.is_empty() {
+        if !packages.is_empty() {
             items.push(make_submenu(
-                &format!("Packages ({})", self.state.packages.len()),
-                &self.state.packages,
+                &format!("Packages ({})", packages.len()),
+                &packages,
             ));
         }
 
-        if !self.state.aur.is_empty() {
-            items.push(make_submenu(
-                &format!("AUR ({})", self.state.aur.len()),
-                &self.state.aur,
-            ));
+        if !aur.is_empty() {
+            items.push(make_submenu(&format!("AUR ({})", aur.len()), &aur));
         }
 
-        if !self.state.flatpak.is_empty() {
+        if !flatpak.is_empty() {
             items.push(make_submenu(
-                &format!("Flatpak ({})", self.state.flatpak.len()),
-                &self.state.flatpak,
+                &format!("Flatpak ({})", flatpak.len()),
+                &flatpak,
             ));
         }
 
@@ -292,16 +319,26 @@ fn main() {
 
     thread::spawn(move || {
         while rx.recv().is_ok() {
-            reload_settings();
+            let settings = reload_settings();
             let new_state = read_state(&path_clone);
 
-            let (changed, prev_last_check, prev_total) = {
+            let only_favorites =
+                settings.tray_only_favorites && settings.enable_favorites;
+
+            let (changed, prev_last_check, prev_relevant_total) = {
                 let prev = last_seen_clone.lock().unwrap();
-                (
-                    !same_state(&prev, &new_state),
-                    prev.last_check,
-                    prev.total(),
-                )
+                let prev_count = if only_favorites {
+                    count_favorite_updates(&prev, &settings.favorite_packages)
+                } else {
+                    prev.total()
+                };
+                (!same_state(&prev, &new_state), prev.last_check, prev_count)
+            };
+
+            let new_relevant_total = if only_favorites {
+                count_favorite_updates(&new_state, &settings.favorite_packages)
+            } else {
+                new_state.total()
             };
 
             *last_seen_clone.lock().unwrap() = new_state.clone();
@@ -318,13 +355,13 @@ fn main() {
             if is_new_check {
                 let manual = expect_check_for_thread.swap(false, Ordering::SeqCst);
                 if manual {
-                    fire_check_complete_notification(new_state.total());
+                    fire_check_complete_notification(new_relevant_total);
                 } else if changed
-                    && prev_total == 0
-                    && new_state.total() > 0
-                    && load_settings().show_update_notifications
+                    && prev_relevant_total == 0
+                    && new_relevant_total > 0
+                    && settings.show_update_notifications
                 {
-                    fire_notification(new_state.total());
+                    fire_notification(new_relevant_total);
                 }
             }
         }

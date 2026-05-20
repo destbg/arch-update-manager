@@ -52,8 +52,13 @@ pub fn show_settings_dialog(
     let general_container = build_tab_container();
     let snapshot_group = create_snapshot_group(settings, &general_container);
     let remember_unselected_check = create_remember_unselected_group(settings, &general_container);
-    let (system_tray_check, always_visible_check, only_favorites_check, notify_check) =
-        create_system_tray_group(settings, &general_container);
+    let (
+        system_tray_check,
+        always_visible_check,
+        only_favorites_check,
+        menu_only_favorites_check,
+        notify_check,
+    ) = create_system_tray_group(settings, &general_container);
     stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
 
     let packages_container = build_tab_container();
@@ -107,6 +112,7 @@ pub fn show_settings_dialog(
         let system_tray_check = system_tray_check.clone();
         let always_visible_check = always_visible_check.clone();
         let only_favorites_check = only_favorites_check.clone();
+        let menu_only_favorites_check = menu_only_favorites_check.clone();
         let notify_check = notify_check.clone();
         let show_desc_check = show_desc_check.clone();
 
@@ -167,6 +173,8 @@ pub fn show_settings_dialog(
                 system_tray_check.is_active() && always_visible_check.is_active();
             new_settings.tray_only_favorites =
                 system_tray_check.is_active() && only_favorites_check.is_active();
+            new_settings.tray_menu_only_favorites =
+                system_tray_check.is_active() && menu_only_favorites_check.is_active();
             new_settings.show_update_notifications =
                 system_tray_check.is_active() && notify_check.is_active();
             new_settings.show_package_descriptions = show_desc_check.is_active();
@@ -280,10 +288,12 @@ pub fn show_settings_dialog(
     let notify_check_weak = notify_check.clone();
     let always_visible_check_weak = always_visible_check.clone();
     let only_favorites_check_weak = only_favorites_check.clone();
+    let menu_only_favorites_check_weak = menu_only_favorites_check.clone();
     system_tray_check.connect_toggled(move |check| {
         notify_check_weak.set_sensitive(check.is_active());
         always_visible_check_weak.set_sensitive(check.is_active());
         only_favorites_check_weak.set_sensitive(check.is_active());
+        menu_only_favorites_check_weak.set_sensitive(check.is_active());
         save_all_clone();
         apply_tray_state(check.is_active());
     });
@@ -294,13 +304,27 @@ pub fn show_settings_dialog(
     });
 
     let save_all_clone = save_all.clone();
-    always_visible_check.connect_toggled(move |_| {
+    let only_favorites_for_excl = only_favorites_check.clone();
+    always_visible_check.connect_toggled(move |btn| {
+        if btn.is_active() && only_favorites_for_excl.is_active() {
+            only_favorites_for_excl.set_active(false);
+        }
         save_all_clone();
         crate::helpers::tray_integration::kick_tray();
     });
 
     let save_all_clone = save_all.clone();
-    only_favorites_check.connect_toggled(move |_| {
+    let always_visible_for_excl = always_visible_check.clone();
+    only_favorites_check.connect_toggled(move |btn| {
+        if btn.is_active() && always_visible_for_excl.is_active() {
+            always_visible_for_excl.set_active(false);
+        }
+        save_all_clone();
+        crate::helpers::tray_integration::kick_tray();
+    });
+
+    let save_all_clone = save_all.clone();
+    menu_only_favorites_check.connect_toggled(move |_| {
         save_all_clone();
         crate::helpers::tray_integration::kick_tray();
     });
@@ -396,6 +420,7 @@ fn create_system_tray_group(
     gtk4::CheckButton,
     gtk4::CheckButton,
     gtk4::CheckButton,
+    gtk4::CheckButton,
 ) {
     let systemd_available = crate::helpers::tray_integration::has_systemd_user_session();
 
@@ -428,6 +453,15 @@ fn create_system_tray_group(
     only_favorites_check.set_margin_start(24);
     section.append(&only_favorites_check);
 
+    let menu_only_favorites_check =
+        gtk4::CheckButton::with_label("Show only favorite packages in the tray menu");
+    menu_only_favorites_check.add_css_class("settings-check");
+    menu_only_favorites_check.set_active(settings.tray_menu_only_favorites && systemd_available);
+    menu_only_favorites_check.set_sensitive(systemd_available && settings.enable_system_tray);
+    menu_only_favorites_check.set_margin_top(8);
+    menu_only_favorites_check.set_margin_start(24);
+    section.append(&menu_only_favorites_check);
+
     let notify_check =
         gtk4::CheckButton::with_label("Show desktop notification when updates are available");
     notify_check.add_css_class("settings-check");
@@ -451,7 +485,13 @@ fn create_system_tray_group(
 
     main_container.append(&section);
 
-    return (check, always_visible_check, only_favorites_check, notify_check);
+    return (
+        check,
+        always_visible_check,
+        only_favorites_check,
+        menu_only_favorites_check,
+        notify_check,
+    );
 }
 
 fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> SnapshotGroup {
