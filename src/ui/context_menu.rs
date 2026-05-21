@@ -10,7 +10,7 @@ use crate::helpers::pacman_ignore::{
     add_to_ignore_pkg, is_in_managed_ignore_pkg, remove_from_ignore_pkg,
 };
 use crate::helpers::settings::{load_settings, save_settings};
-use crate::helpers::tray_integration::trigger_check_service;
+use crate::helpers::tray_integration::{kick_tray, trigger_check_service};
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::downgrade_dialog::show_downgrade_dialog;
@@ -77,10 +77,7 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
     add_separator(&vbox);
 
     let settings = load_settings();
-    let is_favorite = settings
-        .favorite_packages
-        .iter()
-        .any(|f| f == &package.name);
+    let is_favorite = settings.is_favorite(&package.name);
     add_action(
         &vbox,
         &popover,
@@ -169,13 +166,8 @@ fn add_separator(parent: &GtkBox) {
 
 fn toggle_favorite(window: &ApplicationWindow, name: &str) {
     let mut settings = load_settings();
-    let is_now_favorite = if settings.favorite_packages.iter().any(|p| p == name) {
-        settings.favorite_packages.retain(|p| p != name);
-        false
-    } else {
-        settings.favorite_packages.push(name.to_string());
-        true
-    };
+    let is_now_favorite = !settings.is_favorite(name);
+    settings.set_favorite(name, is_now_favorite);
     if let Err(e) = save_settings(&settings) {
         show_error_dialog(
             window.upcast_ref::<gtk4::Window>(),
@@ -185,6 +177,7 @@ fn toggle_favorite(window: &ApplicationWindow, name: &str) {
         return;
     }
     refresh_favorite_button(name, is_now_favorite);
+    kick_tray();
 }
 
 fn toggle_blacklist(window: &ApplicationWindow, name: &str, add: bool) {

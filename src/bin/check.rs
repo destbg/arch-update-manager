@@ -1,4 +1,3 @@
-use std::fs;
 use std::process::Command;
 
 use chrono::Utc;
@@ -10,7 +9,8 @@ use arch_update_manager::helpers::pacman_ignore::list_managed_ignores;
 use arch_update_manager::helpers::power::is_on_battery;
 use arch_update_manager::helpers::settings::load_settings;
 use arch_update_manager::helpers::snooze::current_snooze_until;
-use arch_update_manager::models::tray_state::{TrayState, state_dir, state_file};
+use arch_update_manager::helpers::tray_state::write_tray_state;
+use arch_update_manager::models::tray_state::TrayState;
 
 fn main() {
     let manual = std::env::args().any(|a| a == "--manual");
@@ -82,7 +82,7 @@ fn main() {
         flatpak,
     };
 
-    if let Err(e) = write_state(&state) {
+    if let Err(e) = write_tray_state(&state) {
         eprintln!("Failed to write state file: {}", e);
         std::process::exit(1);
     }
@@ -129,15 +129,4 @@ fn get_repo_updates() -> anyhow::Result<Vec<String>> {
         }
     }
     return Ok(updates);
-}
-
-fn write_state(state: &TrayState) -> anyhow::Result<()> {
-    let dir = state_dir().ok_or_else(|| anyhow::anyhow!("Could not determine state directory"))?;
-    fs::create_dir_all(&dir)?;
-
-    let path =
-        state_file().ok_or_else(|| anyhow::anyhow!("Could not determine state file path"))?;
-    let content = serde_json::to_string_pretty(state)?;
-    fs::write(&path, content)?;
-    return Ok(());
 }

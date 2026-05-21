@@ -21,4 +21,5 @@ pub mod snooze;
 pub mod terminal;
 pub mod timeshift;
 pub mod tray_integration;
+pub mod tray_state;
 pub mod unselected_packages;

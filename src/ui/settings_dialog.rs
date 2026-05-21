@@ -18,8 +18,8 @@ use crate::{
         snapshot_retention_period::SnapshotRetentionPeriod,
     },
     ui::{
-        blacklist_dialog::show_manage_blacklist_dialog,
-        favorites_dialog::show_manage_favorites_dialog,
+        blacklist_dialog::show_manage_blacklist_dialog, dialogs::show_confirm_dialog,
+        favorites_dialog::show_manage_favorites_dialog, package_list::refresh_all_favorite_buttons,
     },
 };
 
@@ -86,7 +86,7 @@ pub fn show_settings_dialog(
     let interface_container = build_tab_container();
     let show_desc_check = create_show_descriptions_group(settings, &interface_container);
     let post_update_check = create_post_update_group(settings, &interface_container);
-    let (fav_enable_check, fav_show_col_check, manage_btn) =
+    let (fav_enable_check, fav_show_col_check, manage_btn, mode_btn) =
         create_favorites_group(settings, &interface_container, parent);
     stack.add_titled(
         &wrap_tab(&interface_container),
@@ -227,6 +227,7 @@ pub fn show_settings_dialog(
 
     let fav_show_col_check_weak = fav_show_col_check.downgrade();
     let manage_btn_weak = manage_btn.downgrade();
+    let mode_btn_weak = mode_btn.downgrade();
     let favorites_column2 = favorites_column.clone();
     let save_all_clone = save_all.clone();
     fav_enable_check.connect_toggled(move |check| {
@@ -242,6 +243,9 @@ pub fn show_settings_dialog(
             c.set_sensitive(is_enabled);
         }
         if let Some(btn) = manage_btn_weak.upgrade() {
+            btn.set_sensitive(is_enabled);
+        }
+        if let Some(btn) = mode_btn_weak.upgrade() {
             btn.set_sensitive(is_enabled);
         }
         save_all_clone();
@@ -333,9 +337,15 @@ pub fn show_settings_dialog(
 
     let save_all_clone = save_all.clone();
     let only_favorites_for_excl = only_favorites_check.clone();
+    let menu_only_favorites_for_excl = menu_only_favorites_check.clone();
     always_visible_check.connect_toggled(move |btn| {
-        if btn.is_active() && only_favorites_for_excl.is_active() {
-            only_favorites_for_excl.set_active(false);
+        if btn.is_active() {
+            if only_favorites_for_excl.is_active() {
+                only_favorites_for_excl.set_active(false);
+            }
+            if menu_only_favorites_for_excl.is_active() {
+                menu_only_favorites_for_excl.set_active(false);
+            }
         }
         save_all_clone();
         kick_tray();
@@ -343,16 +353,32 @@ pub fn show_settings_dialog(
 
     let save_all_clone = save_all.clone();
     let always_visible_for_excl = always_visible_check.clone();
+    let menu_only_favorites_for_excl = menu_only_favorites_check.clone();
     only_favorites_check.connect_toggled(move |btn| {
-        if btn.is_active() && always_visible_for_excl.is_active() {
-            always_visible_for_excl.set_active(false);
+        if btn.is_active() {
+            if always_visible_for_excl.is_active() {
+                always_visible_for_excl.set_active(false);
+            }
+            if menu_only_favorites_for_excl.is_active() {
+                menu_only_favorites_for_excl.set_active(false);
+            }
         }
         save_all_clone();
         kick_tray();
     });
 
     let save_all_clone = save_all.clone();
-    menu_only_favorites_check.connect_toggled(move |_| {
+    let always_visible_for_excl = always_visible_check.clone();
+    let only_favorites_for_excl = only_favorites_check.clone();
+    menu_only_favorites_check.connect_toggled(move |btn| {
+        if btn.is_active() {
+            if always_visible_for_excl.is_active() {
+                always_visible_for_excl.set_active(false);
+            }
+            if only_favorites_for_excl.is_active() {
+                only_favorites_for_excl.set_active(false);
+            }
+        }
         save_all_clone();
         kick_tray();
     });
@@ -816,7 +842,12 @@ fn create_favorites_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
     parent: &ApplicationWindow,
-) -> (gtk4::CheckButton, gtk4::CheckButton, gtk4::Button) {
+) -> (
+    gtk4::CheckButton,
+    gtk4::CheckButton,
+    gtk4::Button,
+    gtk4::Button,
+) {
     let section = create_preference_group(
         "Favorite Packages",
         "Mark packages as favorites to show them at the top of the package list.",
@@ -841,9 +872,70 @@ fn create_favorites_group(
         show_manage_favorites_dialog(parent_clone.upcast_ref::<gtk4::Window>());
     });
     section.append(&manage_btn);
+
+    let mode_btn_label = if settings.favorites_exclusion_mode {
+        "Switch to Inclusion Mode"
+    } else {
+        "Switch to Exclusion Mode"
+    };
+    let mode_btn = build_padded_button(mode_btn_label);
+    mode_btn.set_sensitive(settings.enable_favorites);
+    mode_btn.set_halign(gtk4::Align::Start);
+    update_mode_button_tooltip(&mode_btn, settings.favorites_exclusion_mode);
+    let parent_for_mode = parent.clone();
+    mode_btn.connect_clicked(move |btn| {
+        let current = load_settings();
+        let switching_to_exclusion = !current.favorites_exclusion_mode;
+        let (title, message, accept_label) = if switching_to_exclusion {
+            (
+                "Switch to exclusion mode?",
+                "Every installed package becomes a favorite by default. Your current favorites list will be cleared and instead used to track packages you exclude from favorites.",
+                "Switch",
+            )
+        } else {
+            (
+                "Switch to inclusion mode?",
+                "Your current exclusion list will be cleared. After this, no package is a favorite until you mark it.",
+                "Switch",
+            )
+        };
+        let dialog = show_confirm_dialog(&parent_for_mode, title, message, accept_label);
+        let btn_for_response = btn.clone();
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk4::ResponseType::Accept {
+                let mut s = load_settings();
+                s.favorites_exclusion_mode = switching_to_exclusion;
+                s.favorite_packages.clear();
+                if let Err(e) = save_settings(&s) {
+                    eprintln!("Failed to save favorites mode: {}", e);
+                } else {
+                    refresh_all_favorite_buttons(switching_to_exclusion);
+                    btn_for_response.set_label(if switching_to_exclusion {
+                        "Switch to Inclusion Mode"
+                    } else {
+                        "Switch to Exclusion Mode"
+                    });
+                    update_mode_button_tooltip(&btn_for_response, switching_to_exclusion);
+                    kick_tray();
+                }
+            }
+            dialog.close();
+        });
+    });
+    section.append(&mode_btn);
+
     main_container.append(&section);
 
-    return (enable_check, show_col_check, manage_btn);
+    return (enable_check, show_col_check, manage_btn, mode_btn);
+}
+
+fn update_mode_button_tooltip(button: &gtk4::Button, exclusion_mode: bool) {
+    let tooltip = if exclusion_mode {
+        "You are in exclusion mode. Click to switch back to inclusion mode. The current exclusion list will be cleared."
+    } else {
+        "Switch to exclusion mode. Every installed package will become a favorite by default. You can then uncheck the ones you do not want."
+    };
+    button.set_tooltip_text(Some(tooltip));
 }
 
 fn create_packages_group(

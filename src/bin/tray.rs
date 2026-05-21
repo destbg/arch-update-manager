@@ -14,7 +14,9 @@ use signal_hook::iterator::Signals;
 
 use arch_update_manager::helpers::settings::{load_settings, reload_settings};
 use arch_update_manager::helpers::snooze::{clear_snooze, current_snooze_until, set_snooze};
-use arch_update_manager::models::tray_state::{TrayState, state_file};
+use arch_update_manager::helpers::tray_state::state_file;
+use arch_update_manager::models::app_settings::AppSettings;
+use arch_update_manager::models::tray_state::TrayState;
 
 static REFRESH_TX: OnceLock<mpsc::Sender<()>> = OnceLock::new();
 
@@ -49,8 +51,10 @@ impl ArchUpdateTray {
 
     fn visible_total(&self) -> usize {
         let settings = load_settings();
-        if settings.tray_only_favorites && settings.enable_favorites {
-            return count_favorite_updates(&self.state, &settings.favorite_packages);
+        let filter_by_favorites = settings.enable_favorites
+            && (settings.tray_only_favorites || settings.tray_menu_only_favorites);
+        if filter_by_favorites {
+            return count_favorite_updates(&self.state, &settings);
         }
         return self.state.total();
     }
@@ -62,26 +66,24 @@ fn request_refresh() {
     }
 }
 
-fn count_favorite_updates(state: &TrayState, favorites: &[String]) -> usize {
+fn package_name_from_entry(entry: &str) -> &str {
+    return entry.split_whitespace().next().unwrap_or("");
+}
+
+fn count_favorite_updates(state: &TrayState, settings: &AppSettings) -> usize {
     return state
         .packages
         .iter()
         .chain(state.aur.iter())
         .chain(state.flatpak.iter())
-        .filter(|line| {
-            let name = line.split_whitespace().next().unwrap_or("");
-            favorites.iter().any(|f| f == name)
-        })
+        .filter(|line| settings.is_favorite(package_name_from_entry(line)))
         .count();
 }
 
-fn filter_favorite_entries(entries: &[String], favorites: &[String]) -> Vec<String> {
+fn filter_favorite_entries(entries: &[String], settings: &AppSettings) -> Vec<String> {
     return entries
         .iter()
-        .filter(|line| {
-            let name = line.split_whitespace().next().unwrap_or("");
-            favorites.iter().any(|f| f == name)
-        })
+        .filter(|line| settings.is_favorite(package_name_from_entry(line)))
         .cloned()
         .collect();
 }
@@ -148,17 +150,17 @@ impl Tray for ArchUpdateTray {
         let filter_to_favorites = settings.tray_menu_only_favorites && settings.enable_favorites;
 
         let packages = if filter_to_favorites {
-            filter_favorite_entries(&self.state.packages, &settings.favorite_packages)
+            filter_favorite_entries(&self.state.packages, &settings)
         } else {
             self.state.packages.clone()
         };
         let aur = if filter_to_favorites {
-            filter_favorite_entries(&self.state.aur, &settings.favorite_packages)
+            filter_favorite_entries(&self.state.aur, &settings)
         } else {
             self.state.aur.clone()
         };
         let flatpak = if filter_to_favorites {
-            filter_favorite_entries(&self.state.flatpak, &settings.favorite_packages)
+            filter_favorite_entries(&self.state.flatpak, &settings)
         } else {
             self.state.flatpak.clone()
         };
@@ -397,12 +399,13 @@ fn main() {
             let settings = reload_settings();
             let new_state = read_state(&path_clone);
 
-            let only_favorites = settings.tray_only_favorites && settings.enable_favorites;
+            let only_favorites = settings.enable_favorites
+                && (settings.tray_only_favorites || settings.tray_menu_only_favorites);
 
             let (changed, prev_last_check, prev_relevant_total) = {
                 let prev = last_seen_clone.lock().unwrap();
                 let prev_count = if only_favorites {
-                    count_favorite_updates(&prev, &settings.favorite_packages)
+                    count_favorite_updates(&prev, &settings)
                 } else {
                     prev.total()
                 };
@@ -410,7 +413,7 @@ fn main() {
             };
 
             let new_relevant_total = if only_favorites {
-                count_favorite_updates(&new_state, &settings.favorite_packages)
+                count_favorite_updates(&new_state, &settings)
             } else {
                 new_state.total()
             };

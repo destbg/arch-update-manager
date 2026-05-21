@@ -22,6 +22,7 @@ fn default_settings() -> AppSettings {
         enable_favorites: true,
         show_favorites_column: false,
         favorite_packages: Vec::new(),
+        favorites_exclusion_mode: false,
         enable_flatpak_support: is_command_available("flatpak"),
         enable_devel_aur: false,
         keep_old_packages: 3,

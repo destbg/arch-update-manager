@@ -1,10 +1,15 @@
 use std::fs;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Duration, Utc};
 
-use crate::models::snooze_state::{SnoozeState, snooze_file};
-use crate::models::tray_state::state_dir;
+use crate::helpers::tray_state::state_dir;
+use crate::models::snooze_state::SnoozeState;
+
+pub fn snooze_file() -> Option<PathBuf> {
+    return state_dir().map(|d| d.join("snooze.json"));
+}
 
 pub fn current_snooze_until() -> Option<DateTime<Utc>> {
     let state = read_snooze_state()?;

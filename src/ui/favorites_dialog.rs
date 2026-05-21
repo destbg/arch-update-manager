@@ -1,6 +1,7 @@
 use crate::helpers::desktop_apps::get_desktop_app_packages;
 use crate::helpers::installed_packages::get_all_installed_packages;
 use crate::helpers::settings::{load_settings, save_settings};
+use crate::helpers::tray_integration::kick_tray;
 use gtk4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,12 +12,12 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
 
     let mut favorites: Vec<String> = all_packages
         .iter()
-        .filter(|p| settings.favorite_packages.contains(p))
+        .filter(|p| settings.is_favorite(p))
         .cloned()
         .collect();
     let mut others: Vec<String> = all_packages
         .iter()
-        .filter(|p| !settings.favorite_packages.contains(p))
+        .filter(|p| !settings.is_favorite(p))
         .cloned()
         .collect();
     favorites.append(&mut others);
@@ -54,7 +55,7 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
         Rc::new(RefCell::new(Vec::new()));
 
     for pkg_name in &sorted_packages {
-        let is_fav = settings.favorite_packages.contains(pkg_name);
+        let is_fav = settings.is_favorite(pkg_name);
 
         let row = gtk4::ListBoxRow::new();
         row.set_activatable(false);
@@ -127,10 +128,18 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
     ));
     bottom_row.append(&add_apps_btn);
 
-    let clear_btn = gtk4::Button::with_label("Clear all");
-    clear_btn.add_css_class("destructive-action");
-    clear_btn.set_tooltip_text(Some("Uncheck every package in the list"));
-    bottom_row.append(&clear_btn);
+    let bulk_btn = if settings.favorites_exclusion_mode {
+        let btn = gtk4::Button::with_label("Mark all");
+        btn.add_css_class("suggested-action");
+        btn.set_tooltip_text(Some("Tick every package in the list"));
+        btn
+    } else {
+        let btn = gtk4::Button::with_label("Clear all");
+        btn.add_css_class("destructive-action");
+        btn.set_tooltip_text(Some("Uncheck every package in the list"));
+        btn
+    };
+    bottom_row.append(&bulk_btn);
 
     let close_btn = gtk4::Button::with_label("Close");
     close_btn.add_css_class("suggested-action");
@@ -151,10 +160,11 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
         }
     });
 
-    let checkboxes_for_clear = checkboxes.clone();
-    clear_btn.connect_clicked(move |_| {
-        for (_, cb) in checkboxes_for_clear.borrow().iter() {
-            cb.set_active(false);
+    let checkboxes_for_bulk = checkboxes.clone();
+    let target_state = settings.favorites_exclusion_mode;
+    bulk_btn.connect_clicked(move |_| {
+        for (_, cb) in checkboxes_for_bulk.borrow().iter() {
+            cb.set_active(target_state);
         }
     });
 
@@ -166,14 +176,26 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
     let checkboxes_clone = checkboxes.clone();
     dialog.connect_close_request(move |_| {
         let mut s = load_settings();
-        s.favorite_packages = checkboxes_clone
-            .borrow()
-            .iter()
-            .filter(|(_, cb)| cb.is_active())
-            .map(|(name, _)| name.clone())
-            .collect();
+        let new_list: Vec<String> = if s.favorites_exclusion_mode {
+            checkboxes_clone
+                .borrow()
+                .iter()
+                .filter(|(_, cb)| !cb.is_active())
+                .map(|(name, _)| name.clone())
+                .collect()
+        } else {
+            checkboxes_clone
+                .borrow()
+                .iter()
+                .filter(|(_, cb)| cb.is_active())
+                .map(|(name, _)| name.clone())
+                .collect()
+        };
+        s.favorite_packages = new_list;
         if let Err(e) = save_settings(&s) {
             eprintln!("Failed to save favorite packages: {}", e);
+        } else {
+            kick_tray();
         }
         return glib::Propagation::Proceed;
     });

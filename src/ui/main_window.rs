@@ -6,7 +6,8 @@ use crate::helpers::pacman_ignore::{
     add_to_ignore_pkg, is_in_managed_ignore_pkg, list_managed_ignores, remove_from_ignore_pkg,
 };
 use crate::helpers::settings::load_settings;
-use crate::helpers::tray_integration::trigger_check_service;
+use crate::helpers::tray_integration::{kick_tray, trigger_check_service};
+use crate::helpers::tray_state::{build_tray_state, write_tray_state};
 use crate::helpers::unselected_packages::load_unselected_packages;
 use crate::models::info_panel::InfoPanel;
 use crate::models::package_object::PackageUpdateObject;
@@ -381,6 +382,15 @@ fn extract_list_store(column_view: &ColumnView) -> Option<ListStore> {
     return filter_model.model().and_downcast::<ListStore>();
 }
 
+fn publish_tray_state(packages: &[crate::models::package_update::PackageUpdate]) {
+    let state = build_tray_state(packages);
+    if let Err(e) = write_tray_state(&state) {
+        eprintln!("Failed to write tray state: {}", e);
+        return;
+    }
+    kick_tray();
+}
+
 pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindow) {
     glib::spawn_future_local(async move {
         let packages_result = gio::spawn_blocking(|| get_package_updates()).await;
@@ -391,6 +401,7 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                 if !blacklisted.is_empty() {
                     packages.retain(|p| !blacklisted.contains(&p.name));
                 }
+                publish_tray_state(&packages);
                 if packages.is_empty() {
                     stack.set_visible_child_name("no-updates");
                     return;
@@ -435,8 +446,8 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                 let mut packages = packages;
                 if settings.enable_favorites {
                     packages.sort_by(|a, b| {
-                        let a_fav = settings.favorite_packages.contains(&a.name);
-                        let b_fav = settings.favorite_packages.contains(&b.name);
+                        let a_fav = settings.is_favorite(&a.name);
+                        let b_fav = settings.is_favorite(&b.name);
                         b_fav.cmp(&a_fav)
                     });
                 }

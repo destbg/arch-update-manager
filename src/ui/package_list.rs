@@ -1,4 +1,5 @@
 use crate::helpers::settings::{load_settings, save_settings};
+use crate::helpers::tray_integration::kick_tray;
 use crate::helpers::unselected_packages::save_unselected_packages;
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
@@ -26,31 +27,43 @@ pub fn refresh_favorite_button(name: &str, is_favorite: bool) {
         let Some(weak) = map.get(name) else {
             return;
         };
-        let Some(button) = weak.upgrade() else {
-            return;
-        };
-        let handler = unsafe { button.steal_data::<glib::SignalHandlerId>("fav_handler") };
-        if let Some(handler_id) = handler {
-            button.block_signal(&handler_id);
-            button.set_active(is_favorite);
-            button.set_icon_name(if is_favorite {
-                "starred-symbolic"
-            } else {
-                "non-starred-symbolic"
-            });
-            button.unblock_signal(&handler_id);
-            unsafe {
-                button.set_data("fav_handler", handler_id);
-            }
-        } else {
-            button.set_active(is_favorite);
-            button.set_icon_name(if is_favorite {
-                "starred-symbolic"
-            } else {
-                "non-starred-symbolic"
-            });
+        apply_favorite_state(weak, is_favorite);
+    });
+}
+
+pub fn refresh_all_favorite_buttons(is_favorite: bool) {
+    FAVORITE_BUTTONS.with(|map| {
+        for weak in map.borrow().values() {
+            apply_favorite_state(weak, is_favorite);
         }
     });
+}
+
+fn apply_favorite_state(weak: &WeakRef<ToggleButton>, is_favorite: bool) {
+    let Some(button) = weak.upgrade() else {
+        return;
+    };
+    let handler = unsafe { button.steal_data::<glib::SignalHandlerId>("fav_handler") };
+    if let Some(handler_id) = handler {
+        button.block_signal(&handler_id);
+        button.set_active(is_favorite);
+        button.set_icon_name(if is_favorite {
+            "starred-symbolic"
+        } else {
+            "non-starred-symbolic"
+        });
+        button.unblock_signal(&handler_id);
+        unsafe {
+            button.set_data("fav_handler", handler_id);
+        }
+    } else {
+        button.set_active(is_favorite);
+        button.set_icon_name(if is_favorite {
+            "starred-symbolic"
+        } else {
+            "non-starred-symbolic"
+        });
+    }
 }
 
 pub fn create_package_list(
@@ -154,7 +167,7 @@ fn create_favorite_column(column_view: &ColumnView) {
         let pkg_name = obj.data().name.clone();
         let button = list_item.child().and_downcast::<ToggleButton>().unwrap();
 
-        let is_fav = load_settings().favorite_packages.contains(&pkg_name);
+        let is_fav = load_settings().is_favorite(&pkg_name);
         button.set_active(is_fav);
         button.set_icon_name(if is_fav {
             "starred-symbolic"
@@ -171,14 +184,10 @@ fn create_favorite_column(column_view: &ColumnView) {
             } else {
                 "non-starred-symbolic"
             });
-            if is_active {
-                if !s.favorite_packages.contains(&pkg_name_for_handler) {
-                    s.favorite_packages.push(pkg_name_for_handler.clone());
-                }
-            } else {
-                s.favorite_packages.retain(|p| p != &pkg_name_for_handler);
+            s.set_favorite(&pkg_name_for_handler, is_active);
+            if save_settings(&s).is_ok() {
+                kick_tray();
             }
-            let _ = save_settings(&s);
         });
 
         unsafe {

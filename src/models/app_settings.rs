@@ -37,6 +37,8 @@ pub struct AppSettings {
     pub show_favorites_column: bool,
     #[serde(default)]
     pub favorite_packages: Vec<String>,
+    #[serde(default)]
+    pub favorites_exclusion_mode: bool,
     #[serde(default = "default_enable_flatpak_support")]
     pub enable_flatpak_support: bool,
     #[serde(default)]
@@ -67,6 +69,30 @@ pub struct AppSettings {
     pub show_update_notifications: bool,
     #[serde(default = "default_show_package_descriptions")]
     pub show_package_descriptions: bool,
+}
+
+impl AppSettings {
+    pub fn is_favorite(&self, name: &str) -> bool {
+        let in_list = self.favorite_packages.iter().any(|p| p == name);
+        if self.favorites_exclusion_mode {
+            return !in_list;
+        }
+        return in_list;
+    }
+
+    pub fn set_favorite(&mut self, name: &str, want_favorite: bool) {
+        let should_be_in_list = if self.favorites_exclusion_mode {
+            !want_favorite
+        } else {
+            want_favorite
+        };
+        let in_list = self.favorite_packages.iter().any(|p| p == name);
+        if should_be_in_list && !in_list {
+            self.favorite_packages.push(name.to_string());
+        } else if !should_be_in_list && in_list {
+            self.favorite_packages.retain(|p| p != name);
+        }
+    }
 }
 
 fn default_remember_unselected() -> bool {
