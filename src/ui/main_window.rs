@@ -10,6 +10,7 @@ use crate::helpers::settings::load_settings;
 use crate::helpers::tray_integration::{kick_tray, trigger_check_service};
 use crate::helpers::tray_state::{build_tray_state, write_tray_state};
 use crate::helpers::unselected_packages::load_unselected_packages;
+use crate::log_info;
 use crate::models::info_panel::InfoPanel;
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::post_update_page::PostUpdatePage;
@@ -57,6 +58,7 @@ pub fn build_ui(app: &Application) {
 
         let window_clone = window.clone();
         settings_button.connect_clicked(move |_| {
+            log_info!("header: Settings clicked");
             let settings = load_settings();
             let favorites_column = find_favorites_column(&window_clone);
             let package_store = find_package_store(&window_clone);
@@ -69,6 +71,7 @@ pub fn build_ui(app: &Application) {
         news_button.set_tooltip_text(Some("Arch Linux News"));
 
         news_button.connect_clicked(|_| {
+            log_info!("header: News clicked");
             open_url_as_user("https://archlinux.org/news/");
         });
 
@@ -251,6 +254,11 @@ fn wire_ignore_button(panel: &InfoPanel, stack: &Stack, window: &ApplicationWind
             return;
         };
         let target_state = btn.is_active();
+        log_info!(
+            "ignore toggle for {}: target={}",
+            pkg,
+            if target_state { "blacklist" } else { "unblacklist" }
+        );
 
         let (title, message, accept_label) = if target_state {
             (
@@ -288,6 +296,11 @@ fn wire_ignore_button(panel: &InfoPanel, stack: &Stack, window: &ApplicationWind
             *handled_clone.borrow_mut() = true;
 
             if response == gtk4::ResponseType::Accept {
+                log_info!(
+                    "ignore toggle confirmed for {}: {}",
+                    pkg_d,
+                    if target_state { "added" } else { "removed" }
+                );
                 let result = if target_state {
                     add_to_ignore_pkg(&pkg_d)
                 } else {
@@ -344,6 +357,7 @@ fn wire_post_update_back_button(page: &PostUpdatePage, stack: &Stack, window: &A
     let stack_clone = stack.clone();
     let window_clone = window.clone();
     page.back_button.connect_clicked(move |_| {
+        log_info!("post-update: Back clicked");
         let Some(content_box) = stack_clone
             .child_by_name("content")
             .and_downcast::<GtkBox>()

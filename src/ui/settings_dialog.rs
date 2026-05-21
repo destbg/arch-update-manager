@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::{
     helpers::{
         aur::is_command_available,
+        logger::{list_logs, open_log_in_editor},
         pacman_repos::get_repository_groups,
         settings::{get_available_aur_helpers, load_settings, save_settings},
         snapper::{is_snap_pac_installed, is_snapper_installed},
@@ -13,8 +14,9 @@ use crate::{
             apply_check_interval, apply_tray_state, has_systemd_user_session, kick_tray,
         },
     },
+    log_info,
     models::{
-        app_settings::AppSettings, snapshot_group::SnapshotGroup,
+        app_settings::AppSettings, log_file::LogFile, snapshot_group::SnapshotGroup,
         snapshot_retention_period::SnapshotRetentionPeriod,
     },
     ui::{
@@ -69,6 +71,7 @@ pub fn show_settings_dialog(
         skip_metered_check,
         skip_battery_check,
     ) = create_system_tray_group(settings, &general_container);
+    let log_retention_spin = create_logs_group(settings, &general_container);
     stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
 
     let packages_container = build_tab_container();
@@ -128,6 +131,7 @@ pub fn show_settings_dialog(
         let skip_metered_check = skip_metered_check.clone();
         let skip_battery_check = skip_battery_check.clone();
         let show_desc_check = show_desc_check.clone();
+        let log_retention_spin = log_retention_spin.clone();
 
         Rc::new(move || {
             let mut new_settings = load_settings();
@@ -196,9 +200,13 @@ pub fn show_settings_dialog(
             new_settings.skip_check_on_battery =
                 system_tray_check.is_active() && skip_battery_check.is_active();
             new_settings.show_package_descriptions = show_desc_check.is_active();
+            new_settings.log_retention_days = log_retention_spin.value() as u32;
 
             if let Err(e) = save_settings(&new_settings) {
+                log_info!("failed to save settings: {}", e);
                 eprintln!("Failed to save settings: {}", e);
+            } else {
+                log_info!("settings saved");
             }
         })
     };
@@ -401,6 +409,11 @@ pub fn show_settings_dialog(
     });
 
     let save_all_clone = save_all.clone();
+    log_retention_spin.connect_value_changed(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
     let package_store_for_desc = package_store.clone();
     show_desc_check.connect_toggled(move |_| {
         save_all_clone();
@@ -536,15 +549,6 @@ fn create_system_tray_group(
     menu_only_favorites_check.set_margin_start(24);
     section.append(&menu_only_favorites_check);
 
-    let notify_check =
-        gtk4::CheckButton::with_label("Show desktop notification when updates are available");
-    notify_check.add_css_class("settings-check");
-    notify_check.set_active(settings.show_update_notifications && systemd_available);
-    notify_check.set_sensitive(systemd_available && settings.enable_system_tray);
-    notify_check.set_margin_top(8);
-    notify_check.set_margin_start(24);
-    section.append(&notify_check);
-
     let interval_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     interval_box.set_margin_top(8);
     interval_box.set_margin_start(24);
@@ -564,6 +568,15 @@ fn create_system_tray_group(
 
     interval_label.set_sensitive(systemd_available && settings.enable_system_tray);
     section.append(&interval_box);
+
+    let notify_check =
+        gtk4::CheckButton::with_label("Show desktop notification when updates are available");
+    notify_check.add_css_class("settings-check");
+    notify_check.set_active(settings.show_update_notifications && systemd_available);
+    notify_check.set_sensitive(systemd_available && settings.enable_system_tray);
+    notify_check.set_margin_top(8);
+    notify_check.set_margin_start(24);
+    section.append(&notify_check);
 
     let skip_metered_check =
         gtk4::CheckButton::with_label("Skip check on metered network connections");
@@ -1168,6 +1181,110 @@ fn is_flatpak_installed() -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false);
+}
+
+fn create_logs_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::SpinButton {
+    let retention_section = create_preference_group(
+        "Log Retention",
+        "How many days of past session logs to keep before they are automatically deleted.",
+    );
+
+    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    let label = gtk4::Label::new(Some("Keep logs for (days):"));
+    label.set_xalign(0.0);
+    label.set_hexpand(true);
+    row.append(&label);
+
+    let spin = gtk4::SpinButton::with_range(1.0, 365.0, 1.0);
+    spin.set_value(settings.log_retention_days.max(1) as f64);
+    spin.set_digits(0);
+    row.append(&spin);
+
+    retention_section.append(&row);
+    main_container.append(&retention_section);
+
+    let list_section = create_preference_group(
+        "Session Logs",
+        "Click a session to open the log file in your default text editor.",
+    );
+
+    let list_box = gtk4::ListBox::new();
+    list_box.set_selection_mode(gtk4::SelectionMode::None);
+    list_box.add_css_class("boxed-list");
+
+    let logs = list_logs();
+    if logs.is_empty() {
+        let empty = gtk4::Label::new(Some("No session logs yet."));
+        empty.add_css_class("dim-label");
+        empty.set_margin_top(8);
+        empty.set_margin_bottom(8);
+        empty.set_margin_start(12);
+        empty.set_margin_end(12);
+        empty.set_xalign(0.0);
+        list_section.append(&empty);
+    } else {
+        for log in &logs {
+            list_box.append(&build_log_row(log));
+        }
+        list_section.append(&list_box);
+    }
+
+    main_container.append(&list_section);
+
+    return spin;
+}
+
+fn build_log_row(log: &LogFile) -> gtk4::ListBoxRow {
+    let row = gtk4::ListBoxRow::new();
+    row.set_activatable(true);
+
+    let row_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    row_box.set_margin_start(12);
+    row_box.set_margin_end(12);
+    row_box.set_margin_top(8);
+    row_box.set_margin_bottom(8);
+
+    let icon = gtk4::Image::from_icon_name("text-x-generic-symbolic");
+    row_box.append(&icon);
+
+    let text_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    text_box.set_hexpand(true);
+
+    let date_label = gtk4::Label::new(Some(
+        &log.started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+    ));
+    date_label.set_xalign(0.0);
+    text_box.append(&date_label);
+
+    let file_label = gtk4::Label::new(Some(
+        &log.path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string(),
+    ));
+    file_label.set_xalign(0.0);
+    file_label.add_css_class("dim-label");
+    file_label.add_css_class("caption");
+    text_box.append(&file_label);
+
+    row_box.append(&text_box);
+
+    let open_icon = gtk4::Image::from_icon_name("document-open-symbolic");
+    row_box.append(&open_icon);
+
+    row.set_child(Some(&row_box));
+
+    let path = log.path.clone();
+    let gesture = gtk4::GestureClick::new();
+    gesture.connect_released(move |g, _n_press, _x, _y| {
+        g.set_state(gtk4::EventSequenceState::Claimed);
+        log_info!("opening session log {}", path.display());
+        open_log_in_editor(&path);
+    });
+    row.add_controller(gesture);
+
+    return row;
 }
 
 fn create_preference_group(title: &str, description: &str) -> gtk4::Box {

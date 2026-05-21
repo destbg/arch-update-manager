@@ -2,6 +2,7 @@ use crate::helpers::desktop_apps::get_desktop_app_packages;
 use crate::helpers::installed_packages::get_all_installed_packages;
 use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::kick_tray;
+use crate::log_info;
 use gtk4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -149,6 +150,7 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
 
     let checkboxes_for_add = checkboxes.clone();
     add_apps_btn.connect_clicked(move |_| {
+        log_info!("favorites dialog: Add desktop apps clicked");
         let desktop_apps = get_desktop_app_packages();
         if desktop_apps.is_empty() {
             return;
@@ -163,6 +165,7 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
     let checkboxes_for_bulk = checkboxes.clone();
     let target_state = settings.favorites_exclusion_mode;
     bulk_btn.connect_clicked(move |_| {
+        log_info!("favorites dialog: Bulk toggle clicked");
         for (_, cb) in checkboxes_for_bulk.borrow().iter() {
             cb.set_active(target_state);
         }
@@ -170,6 +173,7 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
 
     let dialog_for_close = dialog.clone();
     close_btn.connect_clicked(move |_| {
+        log_info!("favorites dialog: Close clicked");
         dialog_for_close.close();
     });
 

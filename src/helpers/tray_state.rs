@@ -5,6 +5,7 @@ use anyhow::Result;
 use chrono::Utc;
 
 use crate::constants::{AUR_NAME, FLATPAK_NAME};
+use crate::helpers::elevated::chown_to_user;
 use crate::models::package_update::PackageUpdate;
 use crate::models::tray_state::TrayState;
 
@@ -50,10 +51,15 @@ pub fn build_tray_state(packages: &[PackageUpdate]) -> TrayState {
 pub fn write_tray_state(state: &TrayState) -> Result<()> {
     let dir = state_dir().ok_or_else(|| anyhow::anyhow!("Could not determine state directory"))?;
     fs::create_dir_all(&dir)?;
+    if let Some(parent) = dir.parent() {
+        chown_to_user(parent);
+    }
+    chown_to_user(&dir);
 
     let path =
         state_file().ok_or_else(|| anyhow::anyhow!("Could not determine state file path"))?;
     let content = serde_json::to_string_pretty(state)?;
     fs::write(&path, content)?;
+    chown_to_user(&path);
     return Ok(());
 }

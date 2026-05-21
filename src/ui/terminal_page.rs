@@ -4,12 +4,14 @@ use gtk4::{Align, Box as GtkBox, Button, Dialog, Frame, Label, Orientation};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use vte4::{Terminal, TerminalExt};
+use vte4::prelude::*;
+use vte4::{Format, Terminal};
 
 use crate::helpers::get_navigation_stack::get_navigation_stack;
 use crate::helpers::settings::load_settings;
 use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::tray_integration::trigger_check_service;
+use crate::log_info;
 use crate::ui::main_window::{POST_UPDATE_PAGE, load_packages};
 use crate::ui::post_update_page::{reset_post_update_page, run_post_update_detections};
 
@@ -79,7 +81,7 @@ pub fn create_terminal_page() -> GtkBox {
         button_box,
         #[weak]
         title_label,
-        move |_terminal, exit_status| {
+        move |terminal, exit_status| {
             let mut finished = command_finished.lock().unwrap();
             *finished = true;
 
@@ -87,6 +89,9 @@ pub fn create_terminal_page() -> GtkBox {
             *code = Some(exit_status);
 
             *last_exit_clone.lock().unwrap() = exit_status;
+
+            log_info!("install terminal command exited: status={}", exit_status);
+            capture_terminal_output(terminal, "install");
 
             if exit_status == 0 {
                 title_label.set_text("Installation Completed Successfully");
@@ -111,6 +116,7 @@ pub fn create_terminal_page() -> GtkBox {
         #[weak]
         main_box,
         move |_| {
+            log_info!("install terminal: continue button clicked");
             let exit = *last_exit_btn.lock().unwrap();
             let settings = load_settings();
             if exit == 0 {
@@ -198,8 +204,10 @@ where
     let title_for_exit = title_label.clone();
     let close_for_exit = close_btn.clone();
     let done_for_exit = done_flag.clone();
-    terminal.connect_child_exited(move |_term, exit_status| {
+    terminal.connect_child_exited(move |term, exit_status| {
         *done_for_exit.borrow_mut() = true;
+        log_info!("dialog terminal command exited: status={}", exit_status);
+        capture_terminal_output(term, "dialog");
         if exit_status == 0 {
             title_for_exit.set_text("Command completed successfully");
         } else {
@@ -224,8 +232,21 @@ where
         return glib::Propagation::Proceed;
     });
 
+    log_info!("spawning dialog terminal command: {}", command);
     dialog.present();
     spawn_terminal(&terminal, vec!["bash", "-lc", command]);
+}
+
+fn capture_terminal_output(terminal: &vte4::Terminal, label: &str) {
+    let Some(text) = terminal.text_format(Format::Text) else {
+        return;
+    };
+    let text_str: String = text.to_string();
+    let trimmed = text_str.trim_end();
+    if trimmed.is_empty() {
+        return;
+    }
+    log_info!("terminal output ({}):\n{}", label, trimmed);
 }
 
 fn refresh_package_list(main_box: &GtkBox) {

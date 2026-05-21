@@ -9,7 +9,10 @@ use sourceview5::{Buffer, LanguageManager, StyleScheme, StyleSchemeManager, View
 use std::fs;
 use std::path::Path;
 
+use crate::log_info;
+
 pub fn show_pacnew_diff_dialog(parent: &Window, pacnew_path: &str) {
+    log_info!("pacnew dialog opened for {}", pacnew_path);
     let original_path = strip_pacnew_suffix(pacnew_path);
 
     let original_content = read_file_or_warn(&original_path);
@@ -87,12 +90,17 @@ pub fn show_pacnew_diff_dialog(parent: &Window, pacnew_path: &str) {
 
     let dialog_for_cancel = dialog.clone();
     cancel_btn.connect_clicked(move |_| {
+        log_info!("pacnew dialog: Cancel clicked");
         dialog_for_cancel.close();
     });
 
     let dialog_for_keep = dialog.clone();
     let pacnew_for_keep = pacnew_path.to_string();
     keep_btn.connect_clicked(move |btn| {
+        log_info!(
+            "pacnew dialog: Keep current clicked for {}",
+            pacnew_for_keep
+        );
         let parent_window = btn.root().and_downcast::<Window>();
         match fs::remove_file(&pacnew_for_keep) {
             Ok(()) => dialog_for_keep.close(),
@@ -108,6 +116,7 @@ pub fn show_pacnew_diff_dialog(parent: &Window, pacnew_path: &str) {
     let pacnew_for_use = pacnew_path.to_string();
     let original_for_use = original_path.clone();
     use_new_btn.connect_clicked(move |btn| {
+        log_info!("pacnew dialog: Use new clicked for {}", pacnew_for_use);
         let parent_window = btn.root().and_downcast::<Window>();
         if let Err(e) = fs::copy(&pacnew_for_use, &original_for_use) {
             show_error(
@@ -133,6 +142,7 @@ pub fn show_pacnew_diff_dialog(parent: &Window, pacnew_path: &str) {
     let original_for_save = original_path.clone();
     let left_buffer_for_save = left_buffer.clone();
     save_btn.connect_clicked(move |btn| {
+        log_info!("pacnew dialog: Save merged clicked for {}", pacnew_for_save);
         let parent_window = btn.root().and_downcast::<Window>();
         let start = left_buffer_for_save.start_iter();
         let end = left_buffer_for_save.end_iter();

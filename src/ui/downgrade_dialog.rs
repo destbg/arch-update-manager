@@ -8,11 +8,17 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::helpers::pacman_cache::{list_cached_versions, package_path_to_string};
+use crate::log_info;
 use crate::models::cached_version::CachedVersion;
 use crate::ui::context_menu::reload_package_list;
 use crate::ui::terminal_page::run_command_in_dialog;
 
 pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_version: &str) {
+    log_info!(
+        "downgrade dialog opened for {} (current {})",
+        package,
+        current_version
+    );
     let cached = list_cached_versions(package);
     let other_versions: Vec<CachedVersion> = cached
         .into_iter()
@@ -92,9 +98,11 @@ pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_
         Rc::new(RefCell::new(other_versions));
     let parent_clone = parent.clone();
     let list_box_clone = list_box.clone();
+    let package_for_response = package.to_string();
 
     dialog.connect_response(move |dialog, response| {
         if response != ResponseType::Accept {
+            log_info!("downgrade dialog dismissed");
             dialog.close();
             return;
         }
@@ -115,6 +123,11 @@ pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_
         drop(versions);
 
         let command = build_downgrade_command(&target);
+        log_info!(
+            "downgrade confirmed: {} -> {}",
+            package_for_response,
+            target.version
+        );
         dialog.close();
         let window_for_reload = parent_clone.clone();
         run_command_in_dialog(

@@ -4,6 +4,8 @@ pub mod cache_candidates;
 pub mod cached_version;
 pub mod info_panel;
 pub mod installed_flatpak;
+pub mod log_file;
+pub mod log_level;
 pub mod paccache_dry_result;
 pub mod package_info;
 pub mod package_object;

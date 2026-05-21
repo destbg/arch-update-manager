@@ -69,6 +69,8 @@ pub struct AppSettings {
     pub show_update_notifications: bool,
     #[serde(default = "default_show_package_descriptions")]
     pub show_package_descriptions: bool,
+    #[serde(default = "default_log_retention_days")]
+    pub log_retention_days: u32,
 }
 
 impl AppSettings {
@@ -129,4 +131,8 @@ fn default_show_package_descriptions() -> bool {
 
 fn default_check_interval_minutes() -> u32 {
     return 60;
+}
+
+fn default_log_retention_days() -> u32 {
+    return 7;
 }

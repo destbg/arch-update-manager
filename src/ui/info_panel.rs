@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::helpers::elevated::open_url_as_user;
+use crate::log_info;
 use crate::models::info_panel::InfoPanel;
 
 pub fn create_info_panel() -> InfoPanel {
@@ -70,6 +71,7 @@ pub fn create_info_panel() -> InfoPanel {
     let current_url_clone = current_url.clone();
     url_button.connect_clicked(move |_| {
         if let Some(url) = current_url_clone.borrow().clone() {
+            log_info!("info panel: open homepage {}", url);
             open_url_as_user(&url);
         }
     });
@@ -77,6 +79,7 @@ pub fn create_info_panel() -> InfoPanel {
     let current_release_notes_url_clone = current_release_notes_url.clone();
     release_notes_button.connect_clicked(move |_| {
         if let Some(url) = current_release_notes_url_clone.borrow().clone() {
+            log_info!("info panel: open release notes {}", url);
             open_url_as_user(&url);
         }
     });

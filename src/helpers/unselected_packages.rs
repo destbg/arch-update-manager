@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::helpers::elevated::chown_to_user;
+
 pub fn load_unselected_packages() -> Vec<String> {
     let path = match unselected_packages_path() {
         Ok(p) => p,
@@ -37,7 +39,9 @@ pub fn save_unselected_packages(packages: Vec<String>) {
 
     if let Err(e) = fs::write(&path, content) {
         eprintln!("Failed to save unselected packages: {}", e);
+        return;
     }
+    chown_to_user(&path);
 }
 
 fn unselected_packages_path() -> Result<PathBuf> {
@@ -53,6 +57,7 @@ fn unselected_packages_path() -> Result<PathBuf> {
 
     if !app_config_dir.exists() {
         fs::create_dir_all(&app_config_dir).context("Failed to create config directory")?;
+        chown_to_user(&app_config_dir);
     }
 
     return Ok(app_config_dir.join("unselected.json"));

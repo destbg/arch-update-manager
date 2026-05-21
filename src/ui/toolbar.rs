@@ -10,6 +10,7 @@ use crate::helpers::snapper::{
 };
 use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_snapshot};
+use crate::log_info;
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
@@ -46,6 +47,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
         #[weak]
         toolbar,
         move |_| {
+            log_info!("toolbar: Clear clicked");
             if let Some((store, statusbar)) = find_store_and_statusbar(&toolbar) {
                 clear_all_selections(&store, &statusbar);
             }
@@ -62,6 +64,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
         #[weak]
         toolbar,
         move |_| {
+            log_info!("toolbar: Select All clicked");
             if let Some((store, statusbar)) = find_store_and_statusbar(&toolbar) {
                 select_all_packages(&store, &statusbar);
             }
@@ -79,6 +82,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
         #[weak]
         toolbar,
         move |_| {
+            log_info!("toolbar: Refresh clicked");
             let Some((stack, content_box, window)) = get_navigation_stack(&toolbar) else {
                 return;
             };
@@ -103,6 +107,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
         #[weak]
         toolbar,
         move |_| {
+            log_info!("toolbar: Install Updates clicked");
             if let Some((store, _statusbar)) = find_store_and_statusbar(&toolbar) {
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
                     let settings = load_settings();
@@ -124,14 +129,18 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
 
                     confirm_dialog.connect_response(move |dialog, response| {
                         if response == gtk4::ResponseType::Accept {
+                            log_info!("install confirmation accepted");
                             if let Err(e) = install_selected_packages_ui(
                                 &store,
                                 &window,
                                 create_snapshot,
                                 create_snapper,
                             ) {
+                                log_info!("install failed: {}", e);
                                 eprintln!("Failed to install packages: {}", e);
                             }
+                        } else {
+                            log_info!("install confirmation dismissed");
                         }
                         dialog.close();
                     });
@@ -156,6 +165,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
         )));
         news_btn.set_tooltip_text(Some("Arch Linux News"));
         news_btn.connect_clicked(|_| {
+            log_info!("toolbar: News clicked");
             open_url_as_user("https://archlinux.org/news/");
         });
         toolbar.append(&news_btn);
@@ -170,6 +180,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
             #[weak]
             toolbar,
             move |_| {
+                log_info!("toolbar: Settings clicked");
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
                     let settings = load_settings();
                     let favorites_column = find_favorites_column(&window);
@@ -299,6 +310,24 @@ fn install_selected_packages_ui(
                 }
             }
         }
+    }
+
+    log_info!(
+        "install starting: official={}, aur={}, flatpak={}, snapshot={}, snapper={}",
+        official_packages.len(),
+        aur_packages.len(),
+        flatpak_packages.len(),
+        create_snapshot,
+        create_snapper
+    );
+    let pkg_names: Vec<&str> = official_packages
+        .iter()
+        .chain(aur_packages.iter())
+        .chain(flatpak_packages.iter())
+        .map(|p| p.name.as_str())
+        .collect();
+    if !pkg_names.is_empty() {
+        log_info!("packages selected: {}", pkg_names.join(", "));
     }
 
     if official_packages.is_empty() && aur_packages.is_empty() && flatpak_packages.is_empty() {
@@ -571,6 +600,7 @@ exit $expect_status)"#,
 
     let joined = parts.join(" && ");
 
+    log_info!("spawning install terminal command: {}", joined);
     spawn_terminal(terminal, vec!["bash", "-lc", &joined]);
 
     return Ok(());

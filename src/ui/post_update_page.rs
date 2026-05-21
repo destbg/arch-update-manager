@@ -16,6 +16,7 @@ use crate::helpers::post_update::{
 };
 use crate::helpers::repo_switches::detect_repo_switches;
 use crate::helpers::settings::load_settings;
+use crate::log_info;
 use crate::models::cache_candidates::CacheCandidates;
 use crate::models::post_update_page::PostUpdatePage;
 use crate::models::repo_switch::{RepoSwitch, SwitchKind};
@@ -213,6 +214,7 @@ fn build_reboot_banner() -> GtkBox {
     reboot_button.add_css_class("destructive-action");
     reboot_button.set_valign(Align::Center);
     reboot_button.connect_clicked(|button| {
+        log_info!("post-update: Reboot now clicked");
         let parent = button.root().and_downcast::<gtk4::Window>();
         prompt_reboot(parent.as_ref());
     });
@@ -412,6 +414,10 @@ pub fn set_orphans_section(
             .map(|(name, _)| name.clone())
             .collect();
 
+        log_info!(
+            "post-update: Remove orphans clicked ({} selected)",
+            selected.len()
+        );
         if selected.is_empty() {
             return;
         }
@@ -496,6 +502,7 @@ pub fn set_pacnew_section(page: &PostUpdatePage, files: Vec<String>, window: &Ap
     terminal_btn.add_css_class("flat");
     let window_clone = window.clone();
     terminal_btn.connect_clicked(move |_| {
+        log_info!("post-update: Open pacdiff in terminal clicked");
         run_post_update_command(
             &window_clone,
             "DIFFPROG=${DIFFPROG:-vimdiff} sudo -E pacdiff",
@@ -538,6 +545,7 @@ fn build_pacnew_row(
     diff_btn.add_css_class("suggested-action");
     let path_for_diff = file_path.to_string();
     diff_btn.connect_clicked(move |btn| {
+        log_info!("post-update: Diff clicked for {}", path_for_diff);
         let parent = btn.root().and_downcast::<gtk4::Window>();
         if let Some(parent_window) = parent {
             show_pacnew_diff_dialog(&parent_window, &path_for_diff);
@@ -550,6 +558,7 @@ fn build_pacnew_row(
         meld_btn.add_css_class("flat");
         let path_owned = file_path.to_string();
         meld_btn.connect_clicked(move |_| {
+            log_info!("post-update: Open in meld clicked for {}", path_owned);
             open_meld(&path_owned);
         });
         row_box.append(&meld_btn);
@@ -653,6 +662,10 @@ pub fn set_flatpak_unused_section(
             .map(|(name, _)| name.clone())
             .collect();
 
+        log_info!(
+            "post-update: Remove unused Flatpak clicked ({} selected)",
+            selected.len()
+        );
         if selected.is_empty() {
             return;
         }
@@ -758,6 +771,10 @@ pub fn set_resolutions_section(
             .map(|(s, _)| s.target_name.clone())
             .collect();
 
+        log_info!(
+            "post-update: Apply resolutions clicked ({} selected)",
+            selected.len()
+        );
         if selected.is_empty() {
             return;
         }
@@ -865,6 +882,7 @@ pub fn set_services_section(page: &PostUpdatePage, services: Vec<String>) {
     let rows_clone = rows.clone();
     let restart_btn_clone = restart_btn.clone();
     restart_btn.connect_clicked(move |_| {
+        log_info!("post-update: Restart services clicked");
         restart_btn_clone.set_sensitive(false);
         let to_restart: Vec<usize> = rows_clone
             .borrow()
@@ -1146,6 +1164,7 @@ pub fn set_cache_section(
 
     let window_clone = window.clone();
     clean_btn.connect_clicked(move |_| {
+        log_info!("post-update: Clean cache clicked");
         let command = format!(
             "sudo paccache -rk{} && sudo paccache -ruk{}",
             keep_old, keep_uninstalled

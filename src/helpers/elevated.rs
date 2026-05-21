@@ -1,5 +1,7 @@
 use std::env;
+use std::path::Path;
 use std::process::Command;
+use std::sync::OnceLock;
 
 pub fn get_original_user() -> Option<String> {
     if let Ok(user) = env::var("SUDO_USER") {
@@ -64,6 +66,34 @@ pub fn spawn_as_user_or_root(program: &str, args: &[&str]) {
     }
 
     let _ = Command::new(program).args(args).spawn();
+}
+
+static USER_IDS_CACHE: OnceLock<Option<(u32, u32)>> = OnceLock::new();
+
+pub fn get_original_user_ids() -> Option<(u32, u32)> {
+    return *USER_IDS_CACHE.get_or_init(|| {
+        let user = get_original_user()?;
+        let uid: u32 = Command::new("id")
+            .args(["-u", &user])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse().ok())?;
+        let gid: u32 = Command::new("id")
+            .args(["-g", &user])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse().ok())?;
+        return Some((uid, gid));
+    });
+}
+
+pub fn chown_to_user(path: &Path) {
+    let Some((uid, gid)) = get_original_user_ids() else {
+        return;
+    };
+    let _ = std::os::unix::fs::chown(path, Some(uid), Some(gid));
 }
 
 fn is_safe_url(url: &str) -> bool {

@@ -6,6 +6,7 @@ pub mod elevated;
 pub mod flatpak;
 pub mod get_navigation_stack;
 pub mod installed_packages;
+pub mod logger;
 pub mod network;
 pub mod package_files;
 pub mod package_updates;

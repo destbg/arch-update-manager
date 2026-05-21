@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::helpers::elevated::get_original_user;
+use crate::helpers::elevated::{chown_to_user, get_original_user};
 
 const LEGACY_AUTOSTART_FILENAME: &str = "arch-update-manager-tray.desktop";
 const TIMER_UNIT: &str = "arch-update-manager-check.timer";
@@ -70,17 +70,9 @@ fn write_check_timer_override(minutes: u32) -> std::io::Result<()> {
     );
     fs::write(&path, contents)?;
 
-    chown_to_original_user(&dir);
-    chown_to_original_user(&path);
+    chown_to_user(&dir);
+    chown_to_user(&path);
     return Ok(());
-}
-
-fn chown_to_original_user(path: &PathBuf) {
-    let Some(user) = get_original_user() else {
-        return;
-    };
-    let target = format!("{0}:{0}", user);
-    let _ = Command::new("chown").arg(&target).arg(path).status();
 }
 
 fn remove_legacy_autostart_file() {

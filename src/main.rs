@@ -1,4 +1,7 @@
 use arch_update_manager::constants::APP_ID;
+use arch_update_manager::helpers::logger;
+use arch_update_manager::helpers::settings::load_settings;
+use arch_update_manager::log_info;
 use arch_update_manager::ui::build_ui;
 use gtk4::prelude::*;
 use gtk4::{Application, ButtonsType, MessageDialog, MessageType};
@@ -8,6 +11,10 @@ use std::process::Command;
 fn main() {
     setup_user_environment();
 
+    logger::init();
+    logger::cleanup_old_logs(load_settings().log_retention_days);
+    log_info!("application starting");
+
     gtk4::init().expect("Failed to initialize GTK4");
 
     apply_system_theme();
@@ -16,13 +23,16 @@ fn main() {
 
     app.connect_activate(|app| {
         if !is_running_as_root() {
+            log_info!("not running as root, showing dialog");
             show_not_root_dialog_and_quit(app);
             return;
         }
+        log_info!("building UI");
         build_ui(app);
     });
 
     app.run();
+    log_info!("application exiting");
 }
 
 fn is_running_as_root() -> bool {

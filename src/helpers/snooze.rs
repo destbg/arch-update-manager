@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Duration, Utc};
 
+use crate::helpers::elevated::chown_to_user;
 use crate::helpers::tray_state::state_dir;
 use crate::models::snooze_state::SnoozeState;
 
@@ -34,10 +35,12 @@ pub fn set_snooze(hours: u32) -> Result<DateTime<Utc>> {
 
     let dir = state_dir().ok_or_else(|| anyhow!("Could not determine state directory"))?;
     fs::create_dir_all(&dir).context("Failed to create state directory")?;
+    chown_to_user(&dir);
 
     let path = snooze_file().ok_or_else(|| anyhow!("Could not determine snooze file path"))?;
     let content = serde_json::to_string_pretty(&state).context("Failed to serialize snooze")?;
     fs::write(&path, content).context("Failed to write snooze file")?;
+    chown_to_user(&path);
     return Ok(until);
 }
 

@@ -1,6 +1,7 @@
 use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::kick_tray;
 use crate::helpers::unselected_packages::save_unselected_packages;
+use crate::log_info;
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::context_menu::show_package_context_menu;
@@ -179,6 +180,15 @@ fn create_favorite_column(column_view: &ColumnView) {
         let handler_id = button.connect_toggled(move |btn| {
             let mut s = load_settings();
             let is_active = btn.is_active();
+            log_info!(
+                "favorite toggled: {} -> {}",
+                pkg_name_for_handler,
+                if is_active {
+                    "favorite"
+                } else {
+                    "not favorite"
+                }
+            );
             btn.set_icon_name(if is_active {
                 "starred-symbolic"
             } else {
@@ -293,7 +303,14 @@ fn create_upgrade_column(column_view: &ColumnView, store: &ListStore, statusbar:
                 #[weak]
                 statusbar,
                 move |check| {
-                    obj.set_selected(check.is_active());
+                    let active = check.is_active();
+                    let name = obj.data().name;
+                    log_info!(
+                        "package toggled: {} -> {}",
+                        name,
+                        if active { "selected" } else { "unselected" }
+                    );
+                    obj.set_selected(active);
                     update_statusbar(&statusbar, &store);
                     save_unselected_from_store(&store);
                 }

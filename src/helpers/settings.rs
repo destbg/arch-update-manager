@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use crate::helpers::aur::{is_command_available, pamac_supports_aur, shelly_supports_aur};
+use crate::helpers::elevated::chown_to_user;
 use crate::models::app_settings::AppSettings;
 use crate::models::snapshot_retention_period::SnapshotRetentionPeriod;
 
@@ -38,6 +39,7 @@ fn default_settings() -> AppSettings {
         skip_check_on_battery: false,
         show_update_notifications: false,
         show_package_descriptions: true,
+        log_retention_days: 7,
     };
 }
 
@@ -74,6 +76,7 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
     let content = serde_json::to_string_pretty(settings).context("Failed to serialize settings")?;
 
     fs::write(&path, content).context("Failed to write settings file")?;
+    chown_to_user(&path);
 
     if let Some(cache) = SETTINGS_CACHE.get() {
         if let Ok(mut cached_settings) = cache.lock() {
@@ -160,6 +163,7 @@ fn settings_path() -> Result<PathBuf> {
 
     if !app_config_dir.exists() {
         fs::create_dir_all(&app_config_dir).context("Failed to create config directory")?;
+        chown_to_user(&app_config_dir);
     }
 
     return Ok(app_config_dir.join("settings.json"));

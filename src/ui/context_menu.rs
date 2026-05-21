@@ -11,6 +11,7 @@ use crate::helpers::pacman_ignore::{
 };
 use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::{kick_tray, trigger_check_service};
+use crate::log_info;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::downgrade_dialog::show_downgrade_dialog;
@@ -22,6 +23,8 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
     let Some(window) = anchor.root().and_downcast::<ApplicationWindow>() else {
         return;
     };
+
+    log_info!("context menu opened for {}", package.name);
 
     let popover = Popover::new();
     popover.set_position(PositionType::Bottom);
@@ -150,7 +153,9 @@ where
         label_widget.set_halign(Align::Start);
     }
     let popover_clone = popover.clone();
+    let label_owned = label.to_string();
     button.connect_clicked(move |_| {
+        log_info!("context menu action: {}", label_owned);
         popover_clone.popdown();
         action();
     });

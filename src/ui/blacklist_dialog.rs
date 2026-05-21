@@ -2,6 +2,7 @@ use gtk4::prelude::*;
 
 use crate::helpers::pacman_ignore::{list_managed_ignores, remove_from_ignore_pkg};
 use crate::helpers::tray_integration::trigger_check_service;
+use crate::log_info;
 
 pub fn show_manage_blacklist_dialog(parent: &gtk4::Window) {
     let dialog = gtk4::Dialog::builder()
@@ -120,7 +121,9 @@ fn build_row(pkg: &str, list_box: &gtk4::ListBox, empty_label: &gtk4::Label) -> 
     let list_box_clone = list_box.clone();
     let empty_label_clone = empty_label.clone();
     remove_btn.connect_clicked(move |_| {
+        log_info!("blacklist dialog: remove {} clicked", pkg_clone);
         if let Err(e) = remove_from_ignore_pkg(&pkg_clone) {
+            log_info!("blacklist remove failed for {}: {}", pkg_clone, e);
             eprintln!("Failed to remove {} from IgnorePkg: {}", pkg_clone, e);
             return;
         }
