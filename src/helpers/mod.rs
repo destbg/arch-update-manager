@@ -14,6 +14,7 @@ pub mod pacman_ignore;
 pub mod pacman_repos;
 pub mod post_update;
 pub mod power;
+pub mod release_notes;
 pub mod repo_switches;
 pub mod settings;
 pub mod snapper;

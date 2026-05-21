@@ -28,6 +28,13 @@ pub fn create_info_panel() -> InfoPanel {
     ignore_button.set_visible(false);
     header.append(&ignore_button);
 
+    let release_notes_button = Button::from_icon_name("emblem-documents-symbolic");
+    release_notes_button.set_tooltip_text(Some("Open release notes"));
+    release_notes_button.add_css_class("flat");
+    release_notes_button.set_halign(Align::End);
+    release_notes_button.set_visible(false);
+    header.append(&release_notes_button);
+
     let url_button = Button::from_icon_name("web-browser-symbolic");
     url_button.set_tooltip_text(Some("Open homepage"));
     url_button.add_css_class("flat");
@@ -57,11 +64,19 @@ pub fn create_info_panel() -> InfoPanel {
     info_box.append(&scrolled_window);
 
     let current_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let current_release_notes_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let current_package: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
 
     let current_url_clone = current_url.clone();
     url_button.connect_clicked(move |_| {
         if let Some(url) = current_url_clone.borrow().clone() {
+            open_url_as_user(&url);
+        }
+    });
+
+    let current_release_notes_url_clone = current_release_notes_url.clone();
+    release_notes_button.connect_clicked(move |_| {
+        if let Some(url) = current_release_notes_url_clone.borrow().clone() {
             open_url_as_user(&url);
         }
     });
@@ -72,9 +87,11 @@ pub fn create_info_panel() -> InfoPanel {
         container: info_box,
         info_text,
         url_button,
+        release_notes_button,
         ignore_button,
         ignore_handler_id,
         current_url,
+        current_release_notes_url,
         current_package,
     };
 }

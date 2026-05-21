@@ -54,6 +54,17 @@ impl AurManagers {
         };
     }
 
+    pub fn info_args(&self) -> Vec<&'static str> {
+        return match self {
+            AurManagers::Yay => vec!["-Si"],
+            AurManagers::Paru => vec!["-Sai"],
+            AurManagers::Trizen => vec!["-Si"],
+            AurManagers::Pikaur => vec!["-Si"],
+            AurManagers::PamacCli => vec![],
+            AurManagers::Shelly => vec![],
+        };
+    }
+
     pub fn devel_args(&self) -> Vec<&'static str> {
         return match self {
             AurManagers::Yay => vec!["--devel"],

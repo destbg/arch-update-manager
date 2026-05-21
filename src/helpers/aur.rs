@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::process::Command;
 
 pub fn detect_aur_helper() -> Option<AurManagers> {
@@ -109,7 +110,9 @@ pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    return parse_aur_updates(&stdout, &helper);
+    let mut updates = parse_aur_updates(&stdout, &helper)?;
+    enrich_with_upstream_urls(&mut updates, &helper);
+    return Ok(updates);
 }
 
 pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
@@ -143,6 +146,68 @@ pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
         command_parts.extend(args.into_iter().map(|s| s.to_string()));
         return Ok(command_parts);
     }
+}
+
+fn enrich_with_upstream_urls(updates: &mut [PackageUpdate], helper: &AurManagers) {
+    if updates.is_empty() {
+        return;
+    }
+
+    let info_args = helper.info_args();
+    if info_args.is_empty() {
+        return;
+    }
+
+    let names: Vec<&str> = updates.iter().map(|u| u.name.as_str()).collect();
+    let mut args: Vec<&str> = info_args.iter().copied().collect();
+    args.extend(names.iter().copied());
+
+    let Ok(output) = Command::new(helper.command()).args(&args).output() else {
+        return;
+    };
+    if !output.status.success() {
+        return;
+    }
+
+    let info = String::from_utf8_lossy(&output.stdout);
+    let upstream_urls = parse_upstream_urls(&info);
+
+    for update in updates.iter_mut() {
+        if let Some(url) = upstream_urls.get(&update.name) {
+            update.url = Some(url.clone());
+        }
+    }
+}
+
+fn parse_upstream_urls(info: &str) -> HashMap<String, String> {
+    let mut map: HashMap<String, String> = HashMap::new();
+    let mut current_name: Option<String> = None;
+
+    for line in info.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            current_name = None;
+            continue;
+        }
+
+        let Some((field, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let field = field.trim();
+        let value = value.trim();
+
+        if field == "Name" {
+            current_name = Some(value.to_string());
+        } else if field == "URL" {
+            if let Some(name) = &current_name {
+                if !value.is_empty() && value != "None" && !map.contains_key(name) {
+                    map.insert(name.clone(), value.to_string());
+                }
+            }
+        }
+    }
+
+    return map;
 }
 
 fn parse_aur_updates(output: &str, helper: &AurManagers) -> Result<Vec<PackageUpdate>> {

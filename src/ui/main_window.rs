@@ -5,6 +5,7 @@ use crate::helpers::package_updates::get_package_updates;
 use crate::helpers::pacman_ignore::{
     add_to_ignore_pkg, is_in_managed_ignore_pkg, list_managed_ignores, remove_from_ignore_pkg,
 };
+use crate::helpers::release_notes::release_notes_url;
 use crate::helpers::settings::load_settings;
 use crate::helpers::tray_integration::{kick_tray, trigger_check_service};
 use crate::helpers::tray_state::{build_tray_state, write_tray_state};
@@ -182,9 +183,11 @@ fn create_main_content(
     if let Some(selection_model) = list_view.model().and_downcast::<SingleSelection>() {
         let info_text = info_panel.info_text.clone();
         let url_button = info_panel.url_button.clone();
+        let release_notes_button = info_panel.release_notes_button.clone();
         let ignore_button = info_panel.ignore_button.clone();
         let ignore_handler_id = info_panel.ignore_handler_id.clone();
         let current_url = info_panel.current_url.clone();
+        let current_release_notes_url = info_panel.current_release_notes_url.clone();
         let current_package = info_panel.current_package.clone();
         selection_model.connect_selection_changed(move |model, _position, _n_items| {
             if let Some(package_obj) = model.selected_item().and_downcast::<PackageUpdateObject>() {
@@ -192,6 +195,10 @@ fn create_main_content(
                 info_text.set_text(package_data.description.as_str());
                 *current_url.borrow_mut() = package_data.url.clone();
                 url_button.set_visible(package_data.url.is_some());
+
+                let release_url = package_data.url.as_deref().and_then(release_notes_url);
+                release_notes_button.set_visible(release_url.is_some());
+                *current_release_notes_url.borrow_mut() = release_url;
 
                 *current_package.borrow_mut() = Some(package_data.name.clone());
                 let is_flatpak = package_data.repository == FLATPAK_NAME;
@@ -213,6 +220,9 @@ fn create_main_content(
                 info_text.set_text("Select a package to view its information.");
                 *current_url.borrow_mut() = None;
                 url_button.set_visible(false);
+
+                *current_release_notes_url.borrow_mut() = None;
+                release_notes_button.set_visible(false);
 
                 *current_package.borrow_mut() = None;
                 ignore_button.set_visible(false);
