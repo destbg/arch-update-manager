@@ -1,7 +1,7 @@
 use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use crate::helpers::elevated::chown_to_user;
@@ -131,8 +131,15 @@ pub fn logs_dir() -> Option<PathBuf> {
     return Some(base.join("arch-update-manager").join("logs"));
 }
 
-pub fn open_log_in_editor(path: &Path) {
-    crate::helpers::elevated::spawn_as_user_or_root("xdg-open", &[&path.to_string_lossy()]);
+pub fn open_logs_folder() {
+    let Some(dir) = logs_dir() else {
+        return;
+    };
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
+        chown_to_user(&dir);
+    }
+    crate::helpers::elevated::spawn_as_user_or_root("xdg-open", &[&dir.to_string_lossy()]);
 }
 
 #[macro_export]

@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::{
     helpers::{
         aur::is_command_available,
-        logger::{list_logs, open_log_in_editor},
+        logger::open_logs_folder,
         pacman_repos::get_repository_groups,
         settings::{get_available_aur_helpers, load_settings, save_settings},
         snapper::{is_snap_pac_installed, is_snapper_installed},
@@ -16,7 +16,7 @@ use crate::{
     },
     log_info,
     models::{
-        app_settings::AppSettings, log_file::LogFile, snapshot_group::SnapshotGroup,
+        app_settings::AppSettings, snapshot_group::SnapshotGroup,
         snapshot_retention_period::SnapshotRetentionPeriod,
     },
     ui::{
@@ -1184,107 +1184,43 @@ fn is_flatpak_installed() -> bool {
 }
 
 fn create_logs_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::SpinButton {
-    let retention_section = create_preference_group(
-        "Log Retention",
+    let section = create_preference_group(
+        "Session Logs",
         "How many days of past session logs to keep before they are automatically deleted.",
     );
 
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    let label = gtk4::Label::new(Some("Keep logs for (days):"));
-    label.set_xalign(0.0);
-    label.set_hexpand(true);
-    row.append(&label);
+    let retention_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    let retention_label = gtk4::Label::new(Some("Keep logs for (days):"));
+    retention_label.set_xalign(0.0);
+    retention_label.set_hexpand(true);
+    retention_row.append(&retention_label);
 
     let spin = gtk4::SpinButton::with_range(1.0, 365.0, 1.0);
     spin.set_value(settings.log_retention_days.max(1) as f64);
     spin.set_digits(0);
-    row.append(&spin);
+    retention_row.append(&spin);
+    section.append(&retention_row);
 
-    retention_section.append(&row);
-    main_container.append(&retention_section);
+    let folder_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    folder_row.set_margin_top(8);
+    let folder_label = gtk4::Label::new(Some("Open logs folder"));
+    folder_label.set_xalign(0.0);
+    folder_label.set_hexpand(true);
+    folder_row.append(&folder_label);
 
-    let list_section = create_preference_group(
-        "Session Logs",
-        "Click a session to open the log file in your default text editor.",
-    );
+    let open_btn = gtk4::Button::from_icon_name("folder-open-symbolic");
+    open_btn.set_tooltip_text(Some("Open logs folder"));
+    open_btn.add_css_class("flat");
+    open_btn.connect_clicked(|_| {
+        log_info!("settings: open logs folder clicked");
+        open_logs_folder();
+    });
+    folder_row.append(&open_btn);
+    section.append(&folder_row);
 
-    let list_box = gtk4::ListBox::new();
-    list_box.set_selection_mode(gtk4::SelectionMode::None);
-    list_box.add_css_class("boxed-list");
-
-    let logs = list_logs();
-    if logs.is_empty() {
-        let empty = gtk4::Label::new(Some("No session logs yet."));
-        empty.add_css_class("dim-label");
-        empty.set_margin_top(8);
-        empty.set_margin_bottom(8);
-        empty.set_margin_start(12);
-        empty.set_margin_end(12);
-        empty.set_xalign(0.0);
-        list_section.append(&empty);
-    } else {
-        for log in &logs {
-            list_box.append(&build_log_row(log));
-        }
-        list_section.append(&list_box);
-    }
-
-    main_container.append(&list_section);
+    main_container.append(&section);
 
     return spin;
-}
-
-fn build_log_row(log: &LogFile) -> gtk4::ListBoxRow {
-    let row = gtk4::ListBoxRow::new();
-    row.set_activatable(true);
-
-    let row_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    row_box.set_margin_start(12);
-    row_box.set_margin_end(12);
-    row_box.set_margin_top(8);
-    row_box.set_margin_bottom(8);
-
-    let icon = gtk4::Image::from_icon_name("text-x-generic-symbolic");
-    row_box.append(&icon);
-
-    let text_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    text_box.set_hexpand(true);
-
-    let date_label = gtk4::Label::new(Some(
-        &log.started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
-    ));
-    date_label.set_xalign(0.0);
-    text_box.append(&date_label);
-
-    let file_label = gtk4::Label::new(Some(
-        &log.path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string(),
-    ));
-    file_label.set_xalign(0.0);
-    file_label.add_css_class("dim-label");
-    file_label.add_css_class("caption");
-    text_box.append(&file_label);
-
-    row_box.append(&text_box);
-
-    let open_icon = gtk4::Image::from_icon_name("document-open-symbolic");
-    row_box.append(&open_icon);
-
-    row.set_child(Some(&row_box));
-
-    let path = log.path.clone();
-    let gesture = gtk4::GestureClick::new();
-    gesture.connect_released(move |g, _n_press, _x, _y| {
-        g.set_state(gtk4::EventSequenceState::Claimed);
-        log_info!("opening session log {}", path.display());
-        open_log_in_editor(&path);
-    });
-    row.add_controller(gesture);
-
-    return row;
 }
 
 fn create_preference_group(title: &str, description: &str) -> gtk4::Box {
