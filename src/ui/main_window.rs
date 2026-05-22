@@ -401,9 +401,9 @@ pub fn find_package_store(window: &ApplicationWindow) -> Option<ListStore> {
 fn extract_list_store(column_view: &ColumnView) -> Option<ListStore> {
     let selection_model = column_view.model()?;
     let single = selection_model.downcast_ref::<SingleSelection>()?;
-    let sort_model = single.model()?.downcast::<SortListModel>().ok()?;
-    let filter_model = sort_model.model()?.downcast::<FilterListModel>().ok()?;
-    return filter_model.model().and_downcast::<ListStore>();
+    let filter_model = single.model()?.downcast::<FilterListModel>().ok()?;
+    let sort_model = filter_model.model()?.downcast::<SortListModel>().ok()?;
+    return sort_model.model().and_downcast::<ListStore>();
 }
 
 fn publish_tray_state(packages: &[crate::models::package_update::PackageUpdate]) {

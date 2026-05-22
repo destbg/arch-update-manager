@@ -10,8 +10,8 @@ use glib::{WeakRef, clone, format_size};
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, CustomFilter, CustomSorter,
-    FilterListModel, GestureClick, Label, Ordering, Orientation, SearchEntry, SingleSelection,
-    SortListModel, Statusbar, ToggleButton, gdk,
+    FilterListModel, GestureClick, Label, ListItem, Ordering, Orientation, PropagationPhase,
+    SearchEntry, SingleSelection, SortListModel, Statusbar, ToggleButton, gdk,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -40,33 +40,6 @@ pub fn refresh_all_favorite_buttons(is_favorite: bool) {
     });
 }
 
-fn apply_favorite_state(weak: &WeakRef<ToggleButton>, is_favorite: bool) {
-    let Some(button) = weak.upgrade() else {
-        return;
-    };
-    let handler = unsafe { button.steal_data::<glib::SignalHandlerId>("fav_handler") };
-    if let Some(handler_id) = handler {
-        button.block_signal(&handler_id);
-        button.set_active(is_favorite);
-        button.set_icon_name(if is_favorite {
-            "starred-symbolic"
-        } else {
-            "non-starred-symbolic"
-        });
-        button.unblock_signal(&handler_id);
-        unsafe {
-            button.set_data("fav_handler", handler_id);
-        }
-    } else {
-        button.set_active(is_favorite);
-        button.set_icon_name(if is_favorite {
-            "starred-symbolic"
-        } else {
-            "non-starred-symbolic"
-        });
-    }
-}
-
 pub fn create_package_list(
     search_entry: &SearchEntry,
 ) -> (ColumnView, ListStore, Statusbar, CustomFilter) {
@@ -93,9 +66,9 @@ pub fn create_package_list(
             || data.description.to_lowercase().contains(&needle);
     });
 
-    let filter_model = FilterListModel::new(Some(store.clone()), Some(filter.clone()));
-    let sort_model = SortListModel::new(Some(filter_model), column_view.sorter());
-    let selection_model = SingleSelection::new(Some(sort_model));
+    let sort_model = SortListModel::new(Some(store.clone()), column_view.sorter());
+    let filter_model = FilterListModel::new(Some(sort_model), Some(filter.clone()));
+    let selection_model = SingleSelection::new(Some(filter_model));
     selection_model.set_autoselect(false);
     selection_model.set_can_unselect(true);
     column_view.set_model(Some(&selection_model));
@@ -108,6 +81,87 @@ pub fn create_package_list(
     create_size_column(&column_view);
 
     return (column_view, store, statusbar, filter);
+}
+
+pub fn update_statusbar(statusbar: &Statusbar, store: &ListStore) {
+    let context_id = statusbar.context_id("updates");
+
+    statusbar.remove_all(context_id);
+
+    let n_items = store.n_items();
+    let mut selected_count = 0;
+    let mut total_size = 0i64;
+
+    for i in 0..n_items {
+        if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
+            let data = item.data();
+            if data.selected {
+                selected_count += 1;
+                total_size += data.size;
+            }
+        }
+    }
+
+    let status_text = if total_size > 0 {
+        let size_text = if total_size < 0 {
+            format!("-{}", format_size(total_size.abs() as u64))
+        } else {
+            format_size(total_size as u64).to_string()
+        };
+        format!("{} updates selected ({})", selected_count, size_text)
+    } else {
+        format!("{} updates selected", selected_count)
+    };
+
+    statusbar.push(context_id, &status_text);
+}
+
+pub fn save_unselected_from_store(store: &ListStore) {
+    let settings = load_settings();
+    if !settings.remember_unselected_packages {
+        return;
+    }
+
+    let n_items = store.n_items();
+    let mut unselected = Vec::new();
+
+    for i in 0..n_items {
+        if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
+            let data = item.data();
+            if !data.selected {
+                unselected.push(data.name.clone());
+            }
+        }
+    }
+
+    save_unselected_packages(unselected);
+}
+
+fn apply_favorite_state(weak: &WeakRef<ToggleButton>, is_favorite: bool) {
+    let Some(button) = weak.upgrade() else {
+        return;
+    };
+    let handler = unsafe { button.steal_data::<glib::SignalHandlerId>("fav_handler") };
+    if let Some(handler_id) = handler {
+        button.block_signal(&handler_id);
+        button.set_active(is_favorite);
+        button.set_icon_name(if is_favorite {
+            "starred-symbolic"
+        } else {
+            "non-starred-symbolic"
+        });
+        button.unblock_signal(&handler_id);
+        unsafe {
+            button.set_data("fav_handler", handler_id);
+        }
+    } else {
+        button.set_active(is_favorite);
+        button.set_icon_name(if is_favorite {
+            "starred-symbolic"
+        } else {
+            "non-starred-symbolic"
+        });
+    }
 }
 
 fn package_sorter<F>(key: F) -> CustomSorter
@@ -273,36 +327,51 @@ fn create_repository_column(column_view: &ColumnView) {
 
 fn create_upgrade_column(column_view: &ColumnView, store: &ListStore, statusbar: &Statusbar) {
     let upgrade_factory = gtk4::SignalListItemFactory::new();
-    upgrade_factory.connect_setup(move |_factory, item| {
-        let check = CheckButton::new();
-        check.set_halign(gtk4::Align::Center);
-        item.downcast_ref::<gtk4::ListItem>()
-            .unwrap()
-            .set_child(Some(&check));
-    });
-    upgrade_factory.connect_bind(clone!(
-        #[weak]
-        store,
-        #[weak]
-        statusbar,
-        move |_factory, item| {
-            let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
-            let obj = list_item
-                .item()
-                .and_downcast::<PackageUpdateObject>()
-                .unwrap();
-            let data = obj.data();
-            let check = list_item.child().and_downcast::<CheckButton>().unwrap();
-            check.set_active(data.selected);
+    let shift_held: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
+    let last_anchor: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
 
-            check.connect_toggled(clone!(
-                #[weak]
-                obj,
-                #[weak]
+    upgrade_factory.connect_setup(clone!(
+        #[strong]
+        store,
+        #[strong]
+        statusbar,
+        #[strong]
+        shift_held,
+        #[strong]
+        last_anchor,
+        #[strong]
+        column_view,
+        move |_factory, item| {
+            let list_item = item.downcast_ref::<ListItem>().unwrap().clone();
+            let check = CheckButton::new();
+            check.set_halign(gtk4::Align::Center);
+
+            let shift_for_capture = shift_held.clone();
+            let gesture = GestureClick::new();
+            gesture.set_propagation_phase(PropagationPhase::Capture);
+            gesture.connect_pressed(move |g, _n_press, _x, _y| {
+                let modifier = g.current_event_state();
+                *shift_for_capture.borrow_mut() = modifier.contains(gdk::ModifierType::SHIFT_MASK);
+            });
+            check.add_controller(gesture);
+
+            let handler_id = check.connect_toggled(clone!(
+                #[strong]
+                list_item,
+                #[strong]
                 store,
-                #[weak]
+                #[strong]
                 statusbar,
+                #[strong]
+                shift_held,
+                #[strong]
+                last_anchor,
+                #[strong]
+                column_view,
                 move |check| {
+                    let Some(obj) = list_item.item().and_downcast::<PackageUpdateObject>() else {
+                        return;
+                    };
                     let active = check.is_active();
                     let name = obj.data().name;
                     log_info!(
@@ -311,14 +380,95 @@ fn create_upgrade_column(column_view: &ColumnView, store: &ListStore, statusbar:
                         if active { "selected" } else { "unselected" }
                     );
                     obj.set_selected(active);
+
+                    let current_pos = list_item.position();
+                    let shift = *shift_held.borrow();
+                    *shift_held.borrow_mut() = false;
+
+                    if shift {
+                        let anchor = *last_anchor.borrow();
+                        if let Some(anchor_pos) = anchor {
+                            if anchor_pos != current_pos {
+                                apply_range_selection(
+                                    &column_view,
+                                    &store,
+                                    anchor_pos,
+                                    current_pos,
+                                    active,
+                                );
+                            }
+                        }
+                    } else {
+                        *last_anchor.borrow_mut() = Some(current_pos);
+                    }
+
                     update_statusbar(&statusbar, &store);
                     save_unselected_from_store(&store);
                 }
             ));
+
+            unsafe {
+                check.set_data("upgrade_handler", handler_id);
+            }
+
+            list_item.set_child(Some(&check));
         }
     ));
+
+    upgrade_factory.connect_bind(move |_factory, item| {
+        let list_item = item.downcast_ref::<ListItem>().unwrap();
+        let Some(obj) = list_item.item().and_downcast::<PackageUpdateObject>() else {
+            return;
+        };
+        let Some(check) = list_item.child().and_downcast::<CheckButton>() else {
+            return;
+        };
+        let handler = unsafe { check.steal_data::<glib::SignalHandlerId>("upgrade_handler") };
+        let selected = obj.data().selected;
+        if let Some(hid) = handler {
+            check.block_signal(&hid);
+            check.set_active(selected);
+            check.unblock_signal(&hid);
+            unsafe {
+                check.set_data("upgrade_handler", hid);
+            }
+        } else {
+            check.set_active(selected);
+        }
+    });
+
     let upgrade_column = ColumnViewColumn::new(Some("Upgrade"), Some(upgrade_factory));
     column_view.append_column(&upgrade_column);
+}
+
+fn apply_range_selection(
+    column_view: &ColumnView,
+    store: &ListStore,
+    anchor_pos: u32,
+    current_pos: u32,
+    new_state: bool,
+) {
+    let Some(model) = column_view.model() else {
+        return;
+    };
+    let (lo, hi) = if anchor_pos < current_pos {
+        (anchor_pos, current_pos)
+    } else {
+        (current_pos, anchor_pos)
+    };
+    for p in lo..=hi {
+        if let Some(item) = model.item(p).and_downcast::<PackageUpdateObject>() {
+            item.set_selected(new_state);
+        }
+    }
+
+    let items: Vec<PackageUpdateObject> = (0..store.n_items())
+        .filter_map(|i| store.item(i).and_downcast::<PackageUpdateObject>())
+        .collect();
+    store.remove_all();
+    for item in items {
+        store.append(&item);
+    }
 }
 
 fn create_name_column(column_view: &ColumnView) {
@@ -470,58 +620,4 @@ fn create_size_column(column_view: &ColumnView) {
         return a.data().size.cmp(&b.data().size);
     })));
     column_view.append_column(&size_column);
-}
-
-pub fn update_statusbar(statusbar: &Statusbar, store: &ListStore) {
-    let context_id = statusbar.context_id("updates");
-
-    statusbar.remove_all(context_id);
-
-    let n_items = store.n_items();
-    let mut selected_count = 0;
-    let mut total_size = 0i64;
-
-    for i in 0..n_items {
-        if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
-            let data = item.data();
-            if data.selected {
-                selected_count += 1;
-                total_size += data.size;
-            }
-        }
-    }
-
-    let status_text = if total_size > 0 {
-        let size_text = if total_size < 0 {
-            format!("-{}", format_size(total_size.abs() as u64))
-        } else {
-            format_size(total_size as u64).to_string()
-        };
-        format!("{} updates selected ({})", selected_count, size_text)
-    } else {
-        format!("{} updates selected", selected_count)
-    };
-
-    statusbar.push(context_id, &status_text);
-}
-
-pub fn save_unselected_from_store(store: &ListStore) {
-    let settings = load_settings();
-    if !settings.remember_unselected_packages {
-        return;
-    }
-
-    let n_items = store.n_items();
-    let mut unselected = Vec::new();
-
-    for i in 0..n_items {
-        if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
-            let data = item.data();
-            if !data.selected {
-                unselected.push(data.name.clone());
-            }
-        }
-    }
-
-    save_unselected_packages(unselected);
 }

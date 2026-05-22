@@ -230,10 +230,10 @@ fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Statusbar)> 
     let Some(list_store) = selection_model
         .downcast_ref::<SingleSelection>()
         .and_then(|sm| sm.model())
-        .and_then(|m| m.downcast::<SortListModel>().ok())
-        .and_then(|sm| sm.model())
         .and_then(|m| m.downcast::<FilterListModel>().ok())
         .and_then(|fm| fm.model())
+        .and_then(|m| m.downcast::<SortListModel>().ok())
+        .and_then(|sm| sm.model())
         .and_downcast::<ListStore>()
     else {
         return None;
