@@ -136,6 +136,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 selected: true,
                 size,
                 url,
+                flatpak_installation: None,
             });
         }
     }

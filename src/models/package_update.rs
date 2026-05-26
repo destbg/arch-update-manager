@@ -1,3 +1,5 @@
+use crate::models::flatpak_installation::FlatpakInstallation;
+
 #[derive(Clone, Debug)]
 pub struct PackageUpdate {
     pub repository: String,
@@ -8,6 +10,7 @@ pub struct PackageUpdate {
     pub new_version: String,
     pub size: i64,
     pub url: Option<String>,
+    pub flatpak_installation: Option<FlatpakInstallation>,
 }
 
 impl Default for PackageUpdate {
@@ -21,6 +24,7 @@ impl Default for PackageUpdate {
             new_version: String::new(),
             size: 0,
             url: None,
+            flatpak_installation: None,
         }
     }
 }

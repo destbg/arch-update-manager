@@ -577,8 +577,8 @@ exit $expect_status)"#,
     };
 
     let flatpak_cmd = if !flatpak_packages.is_empty() {
-        let ids: Vec<String> = flatpak_packages.iter().map(|p| p.name.clone()).collect();
-        build_flatpak_update_command(&ids)
+        let refs: Vec<&PackageUpdate> = flatpak_packages.iter().collect();
+        build_flatpak_update_command(&refs)
     } else {
         None
     };

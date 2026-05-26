@@ -255,6 +255,7 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             current_version: e.current_version,
             new_version: e.new_version,
             name: e.name,
+            flatpak_installation: None,
         })
         .collect());
 }
@@ -279,6 +280,7 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
                 "https://aur.archlinux.org/packages/{}",
                 package_name
             )),
+            flatpak_installation: None,
         }));
     }
 
@@ -309,6 +311,7 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
                 "https://aur.archlinux.org/packages/{}",
                 package_name
             )),
+            flatpak_installation: None,
         }));
     }
 

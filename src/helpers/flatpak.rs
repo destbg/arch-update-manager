@@ -3,8 +3,13 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::constants::FLATPAK_NAME;
+use crate::helpers::elevated::get_original_user;
+use crate::models::flatpak_installation::FlatpakInstallation;
 use crate::models::installed_flatpak::InstalledFlatpak;
 use crate::models::package_update::PackageUpdate;
+
+const INSTALLATIONS: [FlatpakInstallation; 2] =
+    [FlatpakInstallation::User, FlatpakInstallation::System];
 
 pub fn is_flatpak_available() -> bool {
     return Command::new("which")
@@ -19,130 +24,145 @@ pub fn get_flatpak_updates() -> Result<Vec<PackageUpdate>> {
         return Ok(Vec::new());
     }
 
-    let _ = Command::new("flatpak")
-        .args(&["update", "--appstream"])
-        .output();
-
     let mask = get_flatpak_mask();
     let installed = get_installed_flatpaks();
     let appstream_handler = has_appstream_handler();
 
-    let output = Command::new("flatpak")
-        .args(&[
-            "remote-ls",
-            "--updates",
-            "--cached",
-            "--columns=application,version,name,origin,download-size",
-        ])
-        .output()
-        .context("Failed to run flatpak remote-ls")?;
-
-    if !output.status.success() {
-        return Ok(Vec::new());
-    }
-
-    let text = String::from_utf8_lossy(&output.stdout);
     let mut updates = Vec::new();
 
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
+    for installation in INSTALLATIONS {
+        let _ = flatpak_command(installation)
+            .args(["update", "--appstream", installation.flag()])
+            .output();
+
+        let output = flatpak_command(installation)
+            .args(&[
+                "remote-ls",
+                "--updates",
+                "--cached",
+                installation.flag(),
+                "--columns=application,version,name,origin,download-size",
+            ])
+            .output()
+            .context("Failed to run flatpak remote-ls")?;
+
+        if !output.status.success() {
             continue;
         }
 
-        let parts: Vec<&str> = trimmed.split('\t').collect();
-        if parts.is_empty() {
-            continue;
+        let text = String::from_utf8_lossy(&output.stdout);
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let parts: Vec<&str> = trimmed.split('\t').collect();
+            if parts.is_empty() {
+                continue;
+            }
+
+            let app_id = parts.first().unwrap_or(&"").trim().to_string();
+            if app_id.is_empty() {
+                continue;
+            }
+
+            if is_masked(&mask, &app_id) {
+                continue;
+            }
+
+            let key = (app_id.clone(), installation);
+
+            let new_version = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+
+            let display_name = parts
+                .get(2)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .or_else(|| installed.get(&key).map(|i| i.name.clone()))
+                .unwrap_or_else(|| app_id.clone());
+
+            let origin = parts
+                .get(3)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let download_size = parts
+                .get(4)
+                .and_then(|s| parse_flatpak_size(s.trim()))
+                .unwrap_or(0);
+
+            let current_version = installed
+                .get(&key)
+                .map(|i| i.version.clone())
+                .unwrap_or_default();
+
+            let url = build_flatpak_url(&origin, &app_id, appstream_handler);
+
+            let scope = match installation {
+                FlatpakInstallation::User => "user",
+                FlatpakInstallation::System => "system",
+            };
+
+            updates.push(PackageUpdate {
+                repository: FLATPAK_NAME.to_string(),
+                selected: true,
+                name: app_id.clone(),
+                description: format!("Flatpak application ({}): {}", scope, display_name),
+                current_version,
+                new_version,
+                size: download_size,
+                url,
+                flatpak_installation: Some(installation),
+            });
         }
-
-        let app_id = parts.first().unwrap_or(&"").trim().to_string();
-        if app_id.is_empty() {
-            continue;
-        }
-
-        if is_masked(&mask, &app_id) {
-            continue;
-        }
-
-        let new_version = parts
-            .get(1)
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default();
-
-        let display_name = parts
-            .get(2)
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .or_else(|| installed.get(&app_id).map(|i| i.name.clone()))
-            .unwrap_or_else(|| app_id.clone());
-
-        let origin = parts
-            .get(3)
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default();
-        let download_size = parts
-            .get(4)
-            .and_then(|s| parse_flatpak_size(s.trim()))
-            .unwrap_or(0);
-
-        let current_version = installed
-            .get(&app_id)
-            .map(|i| i.version.clone())
-            .unwrap_or_default();
-
-        let url = build_flatpak_url(&origin, &app_id, appstream_handler);
-
-        updates.push(PackageUpdate {
-            repository: FLATPAK_NAME.to_string(),
-            selected: true,
-            name: app_id.clone(),
-            description: format!("Flatpak application: {}", display_name),
-            current_version,
-            new_version,
-            size: download_size,
-            url,
-        });
     }
 
     return Ok(updates);
 }
 
-pub fn get_unused_flatpak_runtimes() -> Result<Vec<String>> {
+pub fn get_unused_flatpak_runtimes() -> Result<Vec<(String, FlatpakInstallation)>> {
     if !is_flatpak_available() {
         return Ok(Vec::new());
     }
 
-    let mut child = Command::new("flatpak")
-        .args(&["uninstall", "--unused"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("Failed to spawn flatpak uninstall --unused")?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        let _ = stdin.write_all(b"n\n");
-    }
-    drop(child.stdin.take());
-
-    let output = child.wait_with_output()?;
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
     let mut refs = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        if !trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
-            continue;
-        }
 
-        for token in trimmed.split_whitespace().skip(1) {
-            if token.contains('.') && !token.starts_with('[') {
-                refs.push(token.to_string());
-                break;
+    for installation in INSTALLATIONS {
+        let mut child = flatpak_command(installation)
+            .args(&["uninstall", "--unused", installation.flag()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("Failed to spawn flatpak uninstall --unused")?;
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            let _ = stdin.write_all(b"n\n");
+        }
+        drop(child.stdin.take());
+
+        let output = child.wait_with_output()?;
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        for line in text.lines() {
+            let trimmed = line.trim_start();
+            if !trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                continue;
+            }
+
+            for token in trimmed.split_whitespace().skip(1) {
+                if token.contains('.') && !token.starts_with('[') {
+                    refs.push((token.to_string(), installation));
+                    break;
+                }
             }
         }
     }
@@ -153,38 +173,75 @@ pub fn get_unused_flatpak_runtimes() -> Result<Vec<String>> {
     return Ok(refs);
 }
 
-pub fn build_flatpak_uninstall_command(app_ids: &[String]) -> Option<String> {
-    if app_ids.is_empty() {
-        return None;
-    }
-
-    let quoted: Vec<String> = app_ids
-        .iter()
-        .filter_map(|p| shlex::try_quote(p).ok().map(|c| c.into_owned()))
-        .collect();
-
-    if quoted.is_empty() {
-        return None;
-    }
-
-    return Some(format!("flatpak uninstall -y {}", quoted.join(" ")));
+pub fn build_flatpak_uninstall_command(refs: &[(String, FlatpakInstallation)]) -> Option<String> {
+    return build_flatpak_action_command(refs, "uninstall");
 }
 
-pub fn build_flatpak_update_command(app_ids: &[String]) -> Option<String> {
-    if app_ids.is_empty() {
-        return None;
-    }
-
-    let quoted: Vec<String> = app_ids
+pub fn build_flatpak_update_command(packages: &[&PackageUpdate]) -> Option<String> {
+    let refs: Vec<(String, FlatpakInstallation)> = packages
         .iter()
-        .filter_map(|p| shlex::try_quote(p).ok().map(|c| c.into_owned()))
+        .filter_map(|p| p.flatpak_installation.map(|inst| (p.name.clone(), inst)))
         .collect();
+    return build_flatpak_action_command(&refs, "update");
+}
 
-    if quoted.is_empty() {
+fn flatpak_command(installation: FlatpakInstallation) -> Command {
+    if installation == FlatpakInstallation::User {
+        if let Some(user) = get_original_user() {
+            let mut cmd = Command::new("sudo");
+            cmd.args(["-u", &user, "flatpak"]);
+            return cmd;
+        }
+    }
+    return Command::new("flatpak");
+}
+
+fn flatpak_command_prefix(installation: FlatpakInstallation) -> String {
+    if installation == FlatpakInstallation::User {
+        if let Some(user) = get_original_user() {
+            if let Ok(quoted) = shlex::try_quote(&user) {
+                return format!("sudo -u {} flatpak", quoted);
+            }
+        }
+    }
+    return "flatpak".to_string();
+}
+
+fn build_flatpak_action_command(
+    refs: &[(String, FlatpakInstallation)],
+    action: &str,
+) -> Option<String> {
+    if refs.is_empty() {
         return None;
     }
 
-    return Some(format!("flatpak update -y {}", quoted.join(" ")));
+    let mut parts: Vec<String> = Vec::new();
+
+    for installation in INSTALLATIONS {
+        let ids: Vec<String> = refs
+            .iter()
+            .filter(|(_, inst)| *inst == installation)
+            .filter_map(|(id, _)| shlex::try_quote(id).ok().map(|c| c.into_owned()))
+            .collect();
+
+        if ids.is_empty() {
+            continue;
+        }
+
+        parts.push(format!(
+            "{} {} {} -y {}",
+            flatpak_command_prefix(installation),
+            action,
+            installation.flag(),
+            ids.join(" ")
+        ));
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    return Some(parts.join(" && "));
 }
 
 fn build_flatpak_url(origin: &str, app_id: &str, appstream_handler: bool) -> Option<String> {
@@ -200,7 +257,15 @@ fn build_flatpak_url(origin: &str, app_id: &str, appstream_handler: bool) -> Opt
 }
 
 fn has_appstream_handler() -> bool {
-    let output = Command::new("xdg-mime")
+    let mut cmd = if let Some(user) = get_original_user() {
+        let mut c = Command::new("sudo");
+        c.args(["-u", &user, "xdg-mime"]);
+        c
+    } else {
+        Command::new("xdg-mime")
+    };
+
+    let output = cmd
         .args(&["query", "default", "x-scheme-handler/appstream"])
         .output();
     let Ok(output) = output else {
@@ -250,18 +315,23 @@ fn parse_flatpak_size(value: &str) -> Option<i64> {
 }
 
 fn get_flatpak_mask() -> Vec<String> {
-    let output = Command::new("flatpak").arg("mask").output();
-    let output = match output {
-        Ok(o) if o.status.success() => o,
-        _ => return Vec::new(),
-    };
-
-    let text = String::from_utf8_lossy(&output.stdout);
     let mut patterns = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() {
-            patterns.push(trimmed.to_string());
+
+    for installation in INSTALLATIONS {
+        let output = flatpak_command(installation)
+            .args(["mask", installation.flag()])
+            .output();
+        let output = match output {
+            Ok(o) if o.status.success() => o,
+            _ => continue,
+        };
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                patterns.push(trimmed.to_string());
+            }
         }
     }
     return patterns;
@@ -304,33 +374,47 @@ fn pattern_matches(pattern: &str, app_id: &str) -> bool {
     return p == s;
 }
 
-fn get_installed_flatpaks() -> std::collections::HashMap<String, InstalledFlatpak> {
+fn get_installed_flatpaks()
+-> std::collections::HashMap<(String, FlatpakInstallation), InstalledFlatpak> {
     use std::collections::HashMap;
     let mut map = HashMap::new();
 
-    let output = Command::new("flatpak")
-        .args(&["list", "--columns=application,name,version"])
-        .output();
-    let output = match output {
-        Ok(o) if o.status.success() => o,
-        _ => return map,
-    };
+    for installation in INSTALLATIONS {
+        let output = flatpak_command(installation)
+            .args(&[
+                "list",
+                installation.flag(),
+                "--columns=application,name,version",
+            ])
+            .output();
+        let output = match output {
+            Ok(o) if o.status.success() => o,
+            _ => continue,
+        };
 
-    let text = String::from_utf8_lossy(&output.stdout);
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let parts: Vec<&str> = trimmed.split('\t').collect();
-        if parts.len() >= 2 {
-            let app_id = parts[0].trim().to_string();
-            let name = parts[1].trim().to_string();
-            let version = parts
-                .get(2)
-                .map(|s| s.trim().to_string())
-                .unwrap_or_default();
-            map.insert(app_id, InstalledFlatpak { name, version });
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = trimmed.split('\t').collect();
+            if parts.len() >= 2 {
+                let app_id = parts[0].trim().to_string();
+                let name = parts[1].trim().to_string();
+                let version = parts
+                    .get(2)
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
+                map.insert(
+                    (app_id, installation),
+                    InstalledFlatpak {
+                        name,
+                        version,
+                        installation,
+                    },
+                );
+            }
         }
     }
 

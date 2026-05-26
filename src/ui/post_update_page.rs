@@ -18,6 +18,7 @@ use crate::helpers::repo_switches::detect_repo_switches;
 use crate::helpers::settings::load_settings;
 use crate::log_info;
 use crate::models::cache_candidates::CacheCandidates;
+use crate::models::flatpak_installation::FlatpakInstallation;
 use crate::models::post_update_page::PostUpdatePage;
 use crate::models::repo_switch::{RepoSwitch, SwitchKind};
 use crate::models::section::Section;
@@ -584,7 +585,7 @@ fn strip_pacnew_suffix(path: &str) -> String {
 
 pub fn set_flatpak_unused_section(
     page: &PostUpdatePage,
-    refs: Vec<String>,
+    refs: Vec<(String, FlatpakInstallation)>,
     window: &ApplicationWindow,
 ) {
     if refs.is_empty() {
@@ -611,9 +612,10 @@ pub fn set_flatpak_unused_section(
     list_box.set_selection_mode(SelectionMode::None);
     list_box.add_css_class("boxed-list");
 
-    let checkboxes: Rc<RefCell<Vec<(String, CheckButton)>>> = Rc::new(RefCell::new(Vec::new()));
+    let checkboxes: Rc<RefCell<Vec<(String, FlatpakInstallation, CheckButton)>>> =
+        Rc::new(RefCell::new(Vec::new()));
 
-    for ref_name in &refs {
+    for (ref_name, installation) in &refs {
         let row = ListBoxRow::new();
         row.set_activatable(false);
         row.set_selectable(false);
@@ -629,7 +631,11 @@ pub fn set_flatpak_unused_section(
         check.set_valign(Align::Center);
         row_box.append(&check);
 
-        let name_label = Label::new(Some(ref_name));
+        let scope_label = match installation {
+            FlatpakInstallation::User => "user",
+            FlatpakInstallation::System => "system",
+        };
+        let name_label = Label::new(Some(&format!("{} ({})", ref_name, scope_label)));
         name_label.set_xalign(0.0);
         name_label.set_hexpand(true);
         row_box.append(&name_label);
@@ -637,7 +643,9 @@ pub fn set_flatpak_unused_section(
         row.set_child(Some(&row_box));
         list_box.append(&row);
 
-        checkboxes.borrow_mut().push((ref_name.clone(), check));
+        checkboxes
+            .borrow_mut()
+            .push((ref_name.clone(), *installation, check));
     }
 
     section.card.append(&list_box);
@@ -655,11 +663,11 @@ pub fn set_flatpak_unused_section(
     let checkboxes_clone = checkboxes.clone();
     let window_clone = window.clone();
     remove_btn.connect_clicked(move |_| {
-        let selected: Vec<String> = checkboxes_clone
+        let selected: Vec<(String, FlatpakInstallation)> = checkboxes_clone
             .borrow()
             .iter()
-            .filter(|(_, c)| c.is_active())
-            .map(|(name, _)| name.clone())
+            .filter(|(_, _, c)| c.is_active())
+            .map(|(name, inst, _)| (name.clone(), *inst))
             .collect();
 
         log_info!(
