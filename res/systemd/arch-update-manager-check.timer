@@ -2,9 +2,8 @@
 Description=Periodic check for pending Arch updates (arch-update-manager)
 
 [Timer]
-OnBootSec=5min
+OnStartupSec=2min
 OnUnitActiveSec=1h
-Persistent=true
 Unit=arch-update-manager-check.service
 
 [Install]
