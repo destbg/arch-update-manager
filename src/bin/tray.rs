@@ -351,6 +351,12 @@ fn main() {
     let initial_state = read_state(&path);
     let expect_check_notification = Arc::new(AtomicBool::new(false));
 
+    thread::spawn(|| {
+        if let Err(e) = std::process::Command::new("arch-update-manager-check").status() {
+            eprintln!("Failed to run initial check on tray startup: {}", e);
+        }
+    });
+
     let tray = ArchUpdateTray {
         state: initial_state.clone(),
         expect_check_notification: expect_check_notification.clone(),
