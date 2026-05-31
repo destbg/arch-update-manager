@@ -350,15 +350,9 @@ pub fn show_settings_dialog(
 
     let save_all_clone = save_all.clone();
     let only_favorites_for_excl = only_favorites_check.clone();
-    let menu_only_favorites_for_excl = menu_only_favorites_check.clone();
     always_visible_check.connect_toggled(move |btn| {
-        if btn.is_active() {
-            if only_favorites_for_excl.is_active() {
-                only_favorites_for_excl.set_active(false);
-            }
-            if menu_only_favorites_for_excl.is_active() {
-                menu_only_favorites_for_excl.set_active(false);
-            }
+        if btn.is_active() && only_favorites_for_excl.is_active() {
+            only_favorites_for_excl.set_active(false);
         }
         save_all_clone();
         kick_tray();
@@ -366,32 +360,16 @@ pub fn show_settings_dialog(
 
     let save_all_clone = save_all.clone();
     let always_visible_for_excl = always_visible_check.clone();
-    let menu_only_favorites_for_excl = menu_only_favorites_check.clone();
     only_favorites_check.connect_toggled(move |btn| {
-        if btn.is_active() {
-            if always_visible_for_excl.is_active() {
-                always_visible_for_excl.set_active(false);
-            }
-            if menu_only_favorites_for_excl.is_active() {
-                menu_only_favorites_for_excl.set_active(false);
-            }
+        if btn.is_active() && always_visible_for_excl.is_active() {
+            always_visible_for_excl.set_active(false);
         }
         save_all_clone();
         kick_tray();
     });
 
     let save_all_clone = save_all.clone();
-    let always_visible_for_excl = always_visible_check.clone();
-    let only_favorites_for_excl = only_favorites_check.clone();
-    menu_only_favorites_check.connect_toggled(move |btn| {
-        if btn.is_active() {
-            if always_visible_for_excl.is_active() {
-                always_visible_for_excl.set_active(false);
-            }
-            if only_favorites_for_excl.is_active() {
-                only_favorites_for_excl.set_active(false);
-            }
-        }
+    menu_only_favorites_check.connect_toggled(move |_| {
         save_all_clone();
         kick_tray();
     });
