@@ -6,6 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use crate::helpers::aur::{is_command_available, pamac_supports_aur, shelly_supports_aur};
 use crate::helpers::elevated::chown_to_user;
 use crate::models::app_settings::AppSettings;
+use crate::models::check_schedule::CheckSchedule;
 use crate::models::snapshot_retention_period::SnapshotRetentionPeriod;
 
 static SETTINGS_CACHE: OnceLock<Mutex<AppSettings>> = OnceLock::new();
@@ -31,7 +32,7 @@ fn default_settings() -> AppSettings {
         run_post_update_checks: true,
         create_snapper_snapshot: false,
         enable_system_tray: false,
-        check_interval_minutes: 60,
+        check_schedule: CheckSchedule::Daily,
         tray_always_visible: false,
         tray_only_favorites: false,
         tray_menu_only_favorites: false,

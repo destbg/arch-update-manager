@@ -2,6 +2,7 @@ pub mod app_settings;
 pub mod aur_managers;
 pub mod cache_candidates;
 pub mod cached_version;
+pub mod check_schedule;
 pub mod flatpak_installation;
 pub mod info_panel;
 pub mod installed_flatpak;

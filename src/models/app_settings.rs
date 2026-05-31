@@ -2,6 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 
+use crate::models::check_schedule::CheckSchedule;
 use crate::models::snapshot_retention_period::SnapshotRetentionPeriod;
 
 impl Display for SnapshotRetentionPeriod {
@@ -53,8 +54,8 @@ pub struct AppSettings {
     pub create_snapper_snapshot: bool,
     #[serde(default)]
     pub enable_system_tray: bool,
-    #[serde(default = "default_check_interval_minutes")]
-    pub check_interval_minutes: u32,
+    #[serde(default)]
+    pub check_schedule: CheckSchedule,
     #[serde(default)]
     pub tray_always_visible: bool,
     #[serde(default)]
@@ -127,10 +128,6 @@ fn default_run_post_update_checks() -> bool {
 
 fn default_show_package_descriptions() -> bool {
     return true;
-}
-
-fn default_check_interval_minutes() -> u32 {
-    return 60;
 }
 
 fn default_log_retention_days() -> u32 {

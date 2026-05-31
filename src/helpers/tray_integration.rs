@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::helpers::elevated::{chown_to_user, get_original_user};
+use crate::models::check_schedule::CheckSchedule;
 
 const LEGACY_AUTOSTART_FILENAME: &str = "arch-update-manager-tray.desktop";
 const TIMER_UNIT: &str = "arch-update-manager-check.timer";
@@ -33,9 +34,8 @@ pub fn apply_tray_state(enabled: bool) {
     }
 }
 
-pub fn apply_check_interval(minutes: u32) {
-    let minutes = minutes.max(1);
-    if let Err(e) = write_check_timer_override(minutes) {
+pub fn apply_check_schedule(schedule: CheckSchedule) {
+    if let Err(e) = write_check_timer_override(schedule) {
         eprintln!("Failed to write check timer override: {}", e);
         return;
     }
@@ -50,7 +50,7 @@ pub fn has_systemd_user_session() -> bool {
     return PathBuf::from(format!("/run/user/{}/systemd", uid)).exists();
 }
 
-fn write_check_timer_override(minutes: u32) -> std::io::Result<()> {
+fn write_check_timer_override(schedule: CheckSchedule) -> std::io::Result<()> {
     let Some(home) = user_home() else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -65,8 +65,8 @@ fn write_check_timer_override(minutes: u32) -> std::io::Result<()> {
 
     let path = dir.join("override.conf");
     let contents = format!(
-        "[Timer]\nOnUnitActiveSec=\nOnUnitActiveSec={}min\n",
-        minutes
+        "[Timer]\nOnStartupSec=\nOnUnitActiveSec=\nOnCalendar=\nOnCalendar={}\nPersistent=true\n",
+        schedule.to_oncalendar()
     );
     fs::write(&path, contents)?;
 

@@ -11,12 +11,12 @@ use crate::{
         settings::{get_available_aur_helpers, load_settings, save_settings},
         snapper::{is_snap_pac_installed, is_snapper_installed},
         tray_integration::{
-            apply_check_interval, apply_tray_state, has_systemd_user_session, kick_tray,
+            apply_check_schedule, apply_tray_state, has_systemd_user_session, kick_tray,
         },
     },
     log_info,
     models::{
-        app_settings::AppSettings, snapshot_group::SnapshotGroup,
+        app_settings::AppSettings, check_schedule::CheckSchedule, snapshot_group::SnapshotGroup,
         snapshot_retention_period::SnapshotRetentionPeriod,
     },
     ui::{
@@ -67,7 +67,7 @@ pub fn show_settings_dialog(
         only_favorites_check,
         menu_only_favorites_check,
         notify_check,
-        check_interval_spin,
+        check_schedule_combo,
         skip_metered_check,
         skip_battery_check,
     ) = create_system_tray_group(settings, &general_container);
@@ -127,7 +127,7 @@ pub fn show_settings_dialog(
         let only_favorites_check = only_favorites_check.clone();
         let menu_only_favorites_check = menu_only_favorites_check.clone();
         let notify_check = notify_check.clone();
-        let check_interval_spin = check_interval_spin.clone();
+        let check_schedule_combo = check_schedule_combo.clone();
         let skip_metered_check = skip_metered_check.clone();
         let skip_battery_check = skip_battery_check.clone();
         let show_desc_check = show_desc_check.clone();
@@ -194,7 +194,9 @@ pub fn show_settings_dialog(
                 system_tray_check.is_active() && menu_only_favorites_check.is_active();
             new_settings.show_update_notifications =
                 system_tray_check.is_active() && notify_check.is_active();
-            new_settings.check_interval_minutes = (check_interval_spin.value() as u32).max(1);
+            if let Some(active_id) = check_schedule_combo.active_id() {
+                new_settings.check_schedule = CheckSchedule::from_id(&active_id);
+            }
             new_settings.skip_check_on_metered =
                 system_tray_check.is_active() && skip_metered_check.is_active();
             new_settings.skip_check_on_battery =
@@ -319,7 +321,7 @@ pub fn show_settings_dialog(
     let always_visible_check_weak = always_visible_check.clone();
     let only_favorites_check_weak = only_favorites_check.clone();
     let menu_only_favorites_check_weak = menu_only_favorites_check.clone();
-    let check_interval_spin_weak = check_interval_spin.clone();
+    let check_schedule_combo_weak = check_schedule_combo.clone();
     let skip_metered_check_weak = skip_metered_check.clone();
     let skip_battery_check_weak = skip_battery_check.clone();
     system_tray_check.connect_toggled(move |check| {
@@ -327,13 +329,16 @@ pub fn show_settings_dialog(
         always_visible_check_weak.set_sensitive(check.is_active());
         only_favorites_check_weak.set_sensitive(check.is_active());
         menu_only_favorites_check_weak.set_sensitive(check.is_active());
-        check_interval_spin_weak.set_sensitive(check.is_active());
+        check_schedule_combo_weak.set_sensitive(check.is_active());
         skip_metered_check_weak.set_sensitive(check.is_active());
         skip_battery_check_weak.set_sensitive(check.is_active());
         save_all_clone();
         if check.is_active() {
-            let minutes = (check_interval_spin_weak.value() as u32).max(1);
-            apply_check_interval(minutes);
+            let schedule = check_schedule_combo_weak
+                .active_id()
+                .map(|id| CheckSchedule::from_id(&id))
+                .unwrap_or_default();
+            apply_check_schedule(schedule);
         }
         apply_tray_state(check.is_active());
     });
@@ -402,10 +407,13 @@ pub fn show_settings_dialog(
     });
 
     let save_all_clone = save_all.clone();
-    check_interval_spin.connect_value_changed(move |spin| {
+    check_schedule_combo.connect_changed(move |combo| {
         save_all_clone();
-        let minutes = (spin.value() as u32).max(1);
-        apply_check_interval(minutes);
+        let schedule = combo
+            .active_id()
+            .map(|id| CheckSchedule::from_id(&id))
+            .unwrap_or_default();
+        apply_check_schedule(schedule);
     });
 
     let save_all_clone = save_all.clone();
@@ -505,7 +513,7 @@ fn create_system_tray_group(
     gtk4::CheckButton,
     gtk4::CheckButton,
     gtk4::CheckButton,
-    gtk4::SpinButton,
+    gtk4::ComboBoxText,
     gtk4::CheckButton,
     gtk4::CheckButton,
 ) {
@@ -554,17 +562,20 @@ fn create_system_tray_group(
     interval_box.set_margin_start(24);
     interval_box.set_hexpand(true);
 
-    let interval_label = gtk4::Label::new(Some("Check for updates every (minutes)"));
+    let interval_label = gtk4::Label::new(Some("Check for updates"));
     interval_label.set_halign(gtk4::Align::Start);
     interval_label.set_hexpand(true);
     interval_box.append(&interval_label);
 
-    let check_interval_spin = gtk4::SpinButton::with_range(5.0, 1440.0, 5.0);
-    check_interval_spin.set_value(settings.check_interval_minutes.max(1) as f64);
-    check_interval_spin.add_css_class("settings-spin");
-    check_interval_spin.set_halign(gtk4::Align::End);
-    check_interval_spin.set_sensitive(systemd_available && settings.enable_system_tray);
-    interval_box.append(&check_interval_spin);
+    let check_schedule_combo = gtk4::ComboBoxText::new();
+    check_schedule_combo.add_css_class("settings-combo");
+    for schedule in CheckSchedule::all() {
+        check_schedule_combo.append(Some(schedule.id()), schedule.label());
+    }
+    check_schedule_combo.set_active_id(Some(settings.check_schedule.id()));
+    check_schedule_combo.set_halign(gtk4::Align::End);
+    check_schedule_combo.set_sensitive(systemd_available && settings.enable_system_tray);
+    interval_box.append(&check_schedule_combo);
 
     interval_label.set_sensitive(systemd_available && settings.enable_system_tray);
     section.append(&interval_box);
@@ -616,7 +627,7 @@ fn create_system_tray_group(
         only_favorites_check,
         menu_only_favorites_check,
         notify_check,
-        check_interval_spin,
+        check_schedule_combo,
         skip_metered_check,
         skip_battery_check,
     );
