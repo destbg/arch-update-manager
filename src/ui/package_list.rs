@@ -201,68 +201,123 @@ fn create_favorite_column(column_view: &ColumnView) {
     }
 
     let factory = gtk4::SignalListItemFactory::new();
+    let shift_held: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
+    let last_anchor: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
 
-    factory.connect_setup(move |_factory, item| {
-        let button = ToggleButton::new();
-        button.set_halign(gtk4::Align::Center);
-        button.set_icon_name("non-starred-symbolic");
-        button.add_css_class("flat");
-        button.add_css_class("favorite-star");
-        item.downcast_ref::<gtk4::ListItem>()
-            .unwrap()
-            .set_child(Some(&button));
-    });
+    factory.connect_setup(clone!(
+        #[strong]
+        shift_held,
+        move |_factory, item| {
+            let button = ToggleButton::new();
+            button.set_halign(gtk4::Align::Center);
+            button.set_icon_name("non-starred-symbolic");
+            button.add_css_class("flat");
+            button.add_css_class("favorite-star");
 
-    factory.connect_bind(move |_factory, item| {
-        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
-        let obj = list_item
-            .item()
-            .and_downcast::<PackageUpdateObject>()
-            .unwrap();
-        let pkg_name = obj.data().name.clone();
-        let button = list_item.child().and_downcast::<ToggleButton>().unwrap();
+            let shift_for_capture = shift_held.clone();
+            let gesture = GestureClick::new();
+            gesture.set_propagation_phase(PropagationPhase::Capture);
+            gesture.connect_pressed(move |g, _n_press, _x, _y| {
+                let modifier = g.current_event_state();
+                *shift_for_capture.borrow_mut() = modifier.contains(gdk::ModifierType::SHIFT_MASK);
+            });
+            button.add_controller(gesture);
 
-        let is_fav = load_settings().is_favorite(&pkg_name);
-        button.set_active(is_fav);
-        button.set_icon_name(if is_fav {
-            "starred-symbolic"
-        } else {
-            "non-starred-symbolic"
-        });
+            item.downcast_ref::<gtk4::ListItem>()
+                .unwrap()
+                .set_child(Some(&button));
+        }
+    ));
 
-        let pkg_name_for_handler = pkg_name.clone();
-        let handler_id = button.connect_toggled(move |btn| {
-            let mut s = load_settings();
-            let is_active = btn.is_active();
-            log_info!(
-                "favorite toggled: {} -> {}",
-                pkg_name_for_handler,
-                if is_active {
-                    "favorite"
-                } else {
-                    "not favorite"
-                }
-            );
-            btn.set_icon_name(if is_active {
+    factory.connect_bind(clone!(
+        #[strong]
+        shift_held,
+        #[strong]
+        last_anchor,
+        #[strong]
+        column_view,
+        move |_factory, item| {
+            let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap().clone();
+            let obj = list_item
+                .item()
+                .and_downcast::<PackageUpdateObject>()
+                .unwrap();
+            let pkg_name = obj.data().name.clone();
+            let button = list_item.child().and_downcast::<ToggleButton>().unwrap();
+
+            let is_fav = load_settings().is_favorite(&pkg_name);
+            button.set_active(is_fav);
+            button.set_icon_name(if is_fav {
                 "starred-symbolic"
             } else {
                 "non-starred-symbolic"
             });
-            s.set_favorite(&pkg_name_for_handler, is_active);
-            if save_settings(&s).is_ok() {
-                kick_tray();
+
+            let handler_id = button.connect_toggled(clone!(
+                #[strong]
+                pkg_name,
+                #[strong]
+                list_item,
+                #[strong]
+                shift_held,
+                #[strong]
+                last_anchor,
+                #[strong]
+                column_view,
+                move |btn| {
+                    let is_active = btn.is_active();
+                    log_info!(
+                        "favorite toggled: {} -> {}",
+                        pkg_name,
+                        if is_active {
+                            "favorite"
+                        } else {
+                            "not favorite"
+                        }
+                    );
+                    btn.set_icon_name(if is_active {
+                        "starred-symbolic"
+                    } else {
+                        "non-starred-symbolic"
+                    });
+                    let mut s = load_settings();
+                    s.set_favorite(&pkg_name, is_active);
+                    if save_settings(&s).is_ok() {
+                        kick_tray();
+                    }
+
+                    let current_pos = list_item.position();
+                    let shift = *shift_held.borrow();
+                    *shift_held.borrow_mut() = false;
+
+                    if shift {
+                        let anchor = *last_anchor.borrow();
+                        if let Some(anchor_pos) = anchor {
+                            if anchor_pos != current_pos {
+                                apply_favorite_range(
+                                    &column_view,
+                                    anchor_pos,
+                                    current_pos,
+                                    is_active,
+                                );
+                            }
+                        }
+                    } else {
+                        *last_anchor.borrow_mut() = Some(current_pos);
+                    }
+                }
+            ));
+
+            unsafe {
+                button.set_data("fav_handler", handler_id);
+                button.set_data("fav_pkg_name", pkg_name.clone());
             }
-        });
 
-        unsafe {
-            button.set_data("fav_handler", handler_id);
-            button.set_data("fav_pkg_name", pkg_name.clone());
+            FAVORITE_BUTTONS.with(|map| {
+                map.borrow_mut().insert(pkg_name, button.downgrade());
+            });
         }
-
-        FAVORITE_BUTTONS.with(|map| {
-            map.borrow_mut().insert(pkg_name, button.downgrade());
-        });
-    });
+    ));
 
     factory.connect_unbind(move |_factory, item| {
         let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
@@ -468,6 +523,45 @@ fn apply_range_selection(
     store.remove_all();
     for item in items {
         store.append(&item);
+    }
+}
+
+fn apply_favorite_range(
+    column_view: &ColumnView,
+    anchor_pos: u32,
+    current_pos: u32,
+    new_state: bool,
+) {
+    let Some(model) = column_view.model() else {
+        return;
+    };
+    let (lo, hi) = if anchor_pos < current_pos {
+        (anchor_pos, current_pos)
+    } else {
+        (current_pos, anchor_pos)
+    };
+
+    let mut settings = load_settings();
+    let mut changed = Vec::new();
+    for p in lo..=hi {
+        if let Some(item) = model.item(p).and_downcast::<PackageUpdateObject>() {
+            let name = item.data().name;
+            if settings.is_favorite(&name) != new_state {
+                settings.set_favorite(&name, new_state);
+                changed.push(name);
+            }
+        }
+    }
+
+    if changed.is_empty() {
+        return;
+    }
+
+    if save_settings(&settings).is_ok() {
+        for name in &changed {
+            refresh_favorite_button(name, new_state);
+        }
+        kick_tray();
     }
 }
 
