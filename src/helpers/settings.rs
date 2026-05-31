@@ -164,8 +164,9 @@ fn settings_path() -> Result<PathBuf> {
 
     if !app_config_dir.exists() {
         fs::create_dir_all(&app_config_dir).context("Failed to create config directory")?;
-        chown_to_user(&app_config_dir);
     }
+
+    chown_to_user(&app_config_dir);
 
     return Ok(app_config_dir.join("settings.json"));
 }
