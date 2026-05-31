@@ -12,7 +12,7 @@ use ksni::{MenuItem, Status, ToolTip, Tray};
 use signal_hook::consts::SIGUSR1;
 use signal_hook::iterator::Signals;
 
-use arch_update_manager::helpers::settings::{load_settings, reload_settings};
+use arch_update_manager::helpers::settings::{load_settings, reload_settings, save_settings};
 use arch_update_manager::helpers::snooze::{clear_snooze, current_snooze_until, set_snooze};
 use arch_update_manager::helpers::tray_state::state_file;
 use arch_update_manager::models::app_settings::AppSettings;
@@ -58,6 +58,167 @@ impl ArchUpdateTray {
         }
         return self.state.total();
     }
+
+    fn prompt_remove_favorite(&self, package: String) {
+        if package.is_empty() {
+            return;
+        }
+
+        thread::spawn(move || {
+            if is_main_app_running() {
+                let text = format!(
+                    "Close Arch Update Manager first to change favorites.\n\n\"{}\" was not changed.",
+                    package
+                );
+                if !show_warning_dialog("Arch Update Manager is open", &text) {
+                    notify_app_running(&package);
+                }
+                return;
+            }
+
+            let text = format!(
+                "Remove \"{}\" from favorites?\n\nIt will no longer show in the tray.",
+                package
+            );
+            match show_question_dialog("Remove from favorites?", &text) {
+                Some(true) => remove_favorite(&package),
+                Some(false) => {}
+                None => confirm_remove_via_notification(package),
+            }
+        });
+    }
+}
+
+fn remove_favorite(package: &str) {
+    let mut settings = reload_settings();
+    settings.set_favorite(package, false);
+    if let Err(e) = save_settings(&settings) {
+        eprintln!("Failed to save settings after removing favorite: {}", e);
+        return;
+    }
+    request_refresh();
+}
+
+fn confirm_remove_via_notification(package: String) {
+    let body = format!(
+        "Remove \"{}\" from favorites? It will no longer show in the tray.",
+        package
+    );
+    let result = notify_rust::Notification::new()
+        .summary("Remove from favorites?")
+        .body(&body)
+        .icon("arch-update-manager")
+        .appname("Arch Update Manager")
+        .action("remove", "Remove")
+        .action("default", "Cancel")
+        .show();
+
+    match result {
+        Ok(handle) => handle.wait_for_action(|action| {
+            if action == "remove" {
+                remove_favorite(&package);
+            }
+        }),
+        Err(e) => eprintln!("Failed to show confirm notification: {}", e),
+    }
+}
+
+fn notify_app_running(package: &str) {
+    let body = format!(
+        "Close Arch Update Manager first to change favorites. \"{}\" was not changed.",
+        package
+    );
+    let _ = notify_rust::Notification::new()
+        .summary("Arch Update Manager is open")
+        .body(&body)
+        .icon("arch-update-manager")
+        .appname("Arch Update Manager")
+        .show();
+}
+
+fn show_question_dialog(title: &str, text: &str) -> Option<bool> {
+    if which("zenity") {
+        return run_dialog(
+            "zenity",
+            &[
+                "--question",
+                "--title",
+                title,
+                "--text",
+                text,
+                "--ok-label",
+                "Remove",
+                "--cancel-label",
+                "Cancel",
+            ],
+        );
+    }
+    if which("kdialog") {
+        return run_dialog("kdialog", &["--title", title, "--yesno", text]);
+    }
+    return None;
+}
+
+fn show_warning_dialog(title: &str, text: &str) -> bool {
+    if which("zenity") {
+        return run_dialog("zenity", &["--warning", "--title", title, "--text", text]).is_some();
+    }
+    if which("kdialog") {
+        return run_dialog("kdialog", &["--title", title, "--sorry", text]).is_some();
+    }
+    return false;
+}
+
+fn run_dialog(program: &str, args: &[&str]) -> Option<bool> {
+    match std::process::Command::new(program).args(args).status() {
+        Ok(status) => Some(status.success()),
+        Err(e) => {
+            eprintln!("Failed to run {}: {}", program, e);
+            None
+        }
+    }
+}
+
+fn which(program: &str) -> bool {
+    return std::process::Command::new("which")
+        .arg(program)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+}
+
+fn is_main_app_running() -> bool {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return false;
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+
+        let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        let Some(arg0) = cmdline.split(|b| *b == 0).next() else {
+            continue;
+        };
+        if arg0.is_empty() {
+            continue;
+        }
+
+        let arg0 = String::from_utf8_lossy(arg0);
+        let base = arg0.rsplit('/').next().unwrap_or(&arg0);
+        if base == "arch-update-manager" {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn request_refresh() {
@@ -191,17 +352,23 @@ impl Tray for ArchUpdateTray {
             items.push(make_submenu(
                 &format!("Packages ({})", packages.len()),
                 &packages,
+                filter_to_favorites,
             ));
         }
 
         if !aur.is_empty() {
-            items.push(make_submenu(&format!("AUR ({})", aur.len()), &aur));
+            items.push(make_submenu(
+                &format!("AUR ({})", aur.len()),
+                &aur,
+                filter_to_favorites,
+            ));
         }
 
         if !flatpak.is_empty() {
             items.push(make_submenu(
                 &format!("Flatpak ({})", flatpak.len()),
                 &flatpak,
+                filter_to_favorites,
             ));
         }
 
@@ -311,13 +478,17 @@ fn build_snooze_menu(snooze_until: Option<DateTime<chrono::Utc>>) -> MenuItem<Ar
     .into();
 }
 
-fn make_submenu(title: &str, entries: &[String]) -> MenuItem<ArchUpdateTray> {
+fn make_submenu(title: &str, entries: &[String], clickable: bool) -> MenuItem<ArchUpdateTray> {
     let submenu: Vec<MenuItem<ArchUpdateTray>> = entries
         .iter()
         .map(|entry| {
+            let package = package_name_from_entry(entry).to_string();
             StandardItem {
                 label: entry.clone(),
-                enabled: false,
+                enabled: clickable,
+                activate: Box::new(move |tray: &mut ArchUpdateTray| {
+                    tray.prompt_remove_favorite(package.clone());
+                }),
                 ..Default::default()
             }
             .into()
