@@ -8,19 +8,19 @@ gtk4 = "0.11.3"
 glib = "0.22.7"
 gio = "0.22.6"
 anyhow = "1.0.102"
-regex = "1.12.3"
+regex = "1.12.4"
 futures = "0.3.32"
 vte4 = { version = "0.10.0", features = ["v0_76"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.150"
-chrono = { version = "0.4.44", features = ["serde"] }
+chrono = { version = "0.4.45", features = ["serde"] }
 shlex = "2.0.1"
 alpm = "5.0.2"
 pacmanconf = "3.1.0"
 libc = "0.2.186"
 sourceview5 = "0.11.0"
 similar = "3.1.1"
-ksni = { version = "0.3.4", default-features = false, features = [
+ksni = { version = "0.3.5", default-features = false, features = [
     "blocking",
     "async-io",
 ] }

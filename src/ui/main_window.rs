@@ -1,4 +1,5 @@
 use crate::constants::FLATPAK_NAME;
+use crate::helpers::arch_news::news_to_show;
 use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::elevated::open_url_as_user;
 use crate::helpers::package_updates::get_package_updates;
@@ -19,6 +20,7 @@ use crate::ui::dialogs::{show_confirm_dialog, show_error_dialog};
 use crate::ui::error_page::{create_error_page, update_error_page_message};
 use crate::ui::info_panel::{create_info_panel, update_ignore_button_tooltip};
 use crate::ui::loading::create_loading_page;
+use crate::ui::news_dialog::show_news_dialog;
 use crate::ui::no_updates::create_no_updates_page;
 use crate::ui::package_list::{create_package_list, update_statusbar};
 use crate::ui::post_update_page::create_post_update_page;
@@ -119,7 +121,25 @@ pub fn build_ui(app: &Application) {
     let content_box_clone = content_box.clone();
     let window_clone2 = window.clone();
     glib::idle_add_local_once(move || {
-        load_packages(stack_clone, content_box_clone, window_clone2);
+        start_initial_load(stack_clone, content_box_clone, window_clone2);
+    });
+}
+
+fn start_initial_load(stack: Stack, content_box: GtkBox, window: ApplicationWindow) {
+    let check_news = load_settings().check_arch_news;
+
+    load_packages(stack, content_box, window.clone());
+
+    if !check_news {
+        return;
+    }
+
+    glib::spawn_future_local(async move {
+        let items = gio::spawn_blocking(news_to_show).await.unwrap_or_default();
+
+        if !items.is_empty() {
+            show_news_dialog(&window, &items);
+        }
     });
 }
 

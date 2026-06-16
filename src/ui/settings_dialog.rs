@@ -60,6 +60,7 @@ pub fn show_settings_dialog(
 
     let general_container = build_tab_container();
     let snapshot_group = create_snapshot_group(settings, &general_container);
+    let news_check = create_news_group(settings, &general_container);
     let remember_unselected_check = create_remember_unselected_group(settings, &general_container);
     let (
         system_tray_check,
@@ -118,6 +119,7 @@ pub fn show_settings_dialog(
         let separate_repo_check = separate_repo_check.clone();
         let repo_checkboxes = repo_checkboxes.clone();
         let remember_unselected_check = remember_unselected_check.clone();
+        let news_check = news_check.clone();
         let post_update_check = post_update_check.clone();
         let flatpak_enable_check = flatpak_enable_check.clone();
         let keep_old_spin = keep_old_spin.clone();
@@ -181,6 +183,7 @@ pub fn show_settings_dialog(
             new_settings.separate_repositories = selected_repos;
 
             new_settings.remember_unselected_packages = remember_unselected_check.is_active();
+            new_settings.check_arch_news = news_check.is_active();
             new_settings.run_post_update_checks = post_update_check.is_active();
             new_settings.enable_flatpak_support = flatpak_enable_check.is_active();
             new_settings.keep_old_packages = keep_old_spin.value() as u32;
@@ -293,6 +296,11 @@ pub fn show_settings_dialog(
 
     let save_all_clone = save_all.clone();
     remember_unselected_check.connect_toggled(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    news_check.connect_toggled(move |_| {
         save_all_clone();
     });
 
@@ -1029,6 +1037,22 @@ fn create_packages_group(
     main_container.append(&section);
 
     return (enable_check, repo_checkboxes);
+}
+
+fn create_news_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "Arch Linux News",
+        "Check the Arch Linux news feed when the app starts and show any new posts.",
+    );
+
+    let check = gtk4::CheckButton::with_label("Check for news on startup");
+    check.add_css_class("settings-check");
+    check.set_active(settings.check_arch_news);
+
+    section.append(&check);
+    main_container.append(&section);
+
+    return check;
 }
 
 fn create_remember_unselected_group(

@@ -1,3 +1,4 @@
+pub mod arch_news;
 pub mod aur;
 pub mod database_lock;
 pub mod decorations;

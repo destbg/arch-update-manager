@@ -72,6 +72,8 @@ pub struct AppSettings {
     pub show_package_descriptions: bool,
     #[serde(default = "default_log_retention_days")]
     pub log_retention_days: u32,
+    #[serde(default = "default_check_arch_news")]
+    pub check_arch_news: bool,
 }
 
 impl AppSettings {
@@ -132,4 +134,8 @@ fn default_show_package_descriptions() -> bool {
 
 fn default_log_retention_days() -> u32 {
     return 7;
+}
+
+fn default_check_arch_news() -> bool {
+    return true;
 }
