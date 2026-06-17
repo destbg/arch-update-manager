@@ -223,6 +223,8 @@ fn create_main_content(
     wire_ignore_button(&info_panel, stack, window);
 
     if let Some(selection_model) = list_view.model().and_downcast::<SingleSelection>() {
+        let title_label = info_panel.title_label.clone();
+        let info_container = info_panel.container.clone();
         let info_text = info_panel.info_text.clone();
         let url_button = info_panel.url_button.clone();
         let release_notes_button = info_panel.release_notes_button.clone();
@@ -235,6 +237,8 @@ fn create_main_content(
         selection_model.connect_selection_changed(move |model, _position, _n_items| {
             if let Some(package_obj) = model.selected_item().and_downcast::<PackageUpdateObject>() {
                 let package_data = package_obj.data();
+                info_container.set_visible(true);
+                title_label.set_text(&package_data.name);
                 info_text.set_text(package_data.description.as_str());
                 *current_url.borrow_mut() = package_data.url.clone();
                 url_button.set_visible(package_data.url.is_some());
@@ -261,7 +265,8 @@ fn create_main_content(
                     update_ignore_button_tooltip(&ignore_button);
                 }
             } else {
-                info_text.set_text("Select a package to view its information.");
+                info_container.set_visible(false);
+                title_label.set_text("Information");
                 *current_url.borrow_mut() = None;
                 url_button.set_visible(false);
 
@@ -274,7 +279,7 @@ fn create_main_content(
             }
         });
     }
-    paned.set_position(400);
+    paned.set_position(380);
 
     content_box.append(&paned);
 

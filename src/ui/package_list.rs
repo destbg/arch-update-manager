@@ -10,8 +10,8 @@ use glib::{WeakRef, clone, format_size};
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, CustomFilter, CustomSorter,
-    FilterListModel, GestureClick, Label, ListItem, Ordering, Orientation, PropagationPhase,
-    SearchEntry, SingleSelection, SortListModel, Statusbar, ToggleButton, gdk,
+    EventSequenceState, FilterListModel, GestureClick, Label, ListItem, Ordering, Orientation,
+    PropagationPhase, SearchEntry, SingleSelection, SortListModel, Statusbar, ToggleButton, gdk,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -225,6 +225,32 @@ where
     });
 }
 
+fn attach_deselect_gesture(
+    cell: &impl IsA<gtk4::Widget>,
+    column_view: &ColumnView,
+    list_item: &ListItem,
+) {
+    let gesture = GestureClick::new();
+    gesture.set_button(gdk::BUTTON_PRIMARY);
+    gesture.set_propagation_phase(PropagationPhase::Capture);
+    let column_view = column_view.clone();
+    let list_item = list_item.clone();
+    gesture.connect_pressed(move |gesture, _n_press, _x, _y| {
+        let position = list_item.position();
+        if position == gtk4::INVALID_LIST_POSITION {
+            return;
+        }
+        let Some(model) = column_view.model().and_downcast::<SingleSelection>() else {
+            return;
+        };
+        if model.selected() == position {
+            model.set_selected(gtk4::INVALID_LIST_POSITION);
+            gesture.set_state(EventSequenceState::Claimed);
+        }
+    });
+    cell.add_controller(gesture);
+}
+
 fn create_favorite_column(column_view: &ColumnView) {
     let css = gtk4::CssProvider::new();
     css.load_from_data(
@@ -390,12 +416,13 @@ fn create_favorite_column(column_view: &ColumnView) {
 
 fn create_repository_column(column_view: &ColumnView) {
     let repository_factory = gtk4::SignalListItemFactory::new();
+    let column_view_for_gesture = column_view.clone();
     repository_factory.connect_setup(move |_factory, item| {
         let label = Label::new(None);
         label.set_xalign(0.0);
-        item.downcast_ref::<gtk4::ListItem>()
-            .unwrap()
-            .set_child(Some(&label));
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        attach_deselect_gesture(&label, &column_view_for_gesture, list_item);
+        list_item.set_child(Some(&label));
     });
     repository_factory.connect_bind(move |_factory, item| {
         let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
@@ -614,6 +641,7 @@ fn apply_favorite_range(
 
 fn create_name_column(column_view: &ColumnView) {
     let name_factory = gtk4::SignalListItemFactory::new();
+    let column_view_for_gesture = column_view.clone();
     name_factory.connect_setup(move |_factory, item| {
         let vbox = GtkBox::new(Orientation::Vertical, 2);
         vbox.set_valign(gtk4::Align::Center);
@@ -643,9 +671,9 @@ fn create_name_column(column_view: &ColumnView) {
             vbox.set_data("ctx_pkg", row_package);
         }
 
-        item.downcast_ref::<gtk4::ListItem>()
-            .unwrap()
-            .set_child(Some(&vbox));
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        attach_deselect_gesture(&vbox, &column_view_for_gesture, list_item);
+        list_item.set_child(Some(&vbox));
     });
     name_factory.connect_bind(move |_factory, item| {
         let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
@@ -698,6 +726,7 @@ fn create_name_column(column_view: &ColumnView) {
 
 fn create_version_column(column_view: &ColumnView) {
     let version_factory = gtk4::SignalListItemFactory::new();
+    let column_view_for_gesture = column_view.clone();
     version_factory.connect_setup(move |_factory, item| {
         let vbox = GtkBox::new(Orientation::Vertical, 2);
         vbox.set_valign(gtk4::Align::Center);
@@ -708,9 +737,9 @@ fn create_version_column(column_view: &ColumnView) {
         new_label.set_xalign(0.0);
         vbox.append(&old_label);
         vbox.append(&new_label);
-        item.downcast_ref::<gtk4::ListItem>()
-            .unwrap()
-            .set_child(Some(&vbox));
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        attach_deselect_gesture(&vbox, &column_view_for_gesture, list_item);
+        list_item.set_child(Some(&vbox));
     });
     version_factory.connect_bind(move |_factory, item| {
         let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
@@ -738,12 +767,13 @@ fn create_version_column(column_view: &ColumnView) {
 
 fn create_size_column(column_view: &ColumnView) {
     let size_factory = gtk4::SignalListItemFactory::new();
+    let column_view_for_gesture = column_view.clone();
     size_factory.connect_setup(move |_factory, item| {
         let label = Label::new(None);
         label.set_xalign(0.0);
-        item.downcast_ref::<gtk4::ListItem>()
-            .unwrap()
-            .set_child(Some(&label));
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        attach_deselect_gesture(&label, &column_view_for_gesture, list_item);
+        list_item.set_child(Some(&label));
     });
     size_factory.connect_bind(move |_factory, item| {
         let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
@@ -837,12 +867,13 @@ fn plural(n: i64) -> &'static str {
 
 fn create_updated_column(column_view: &ColumnView) {
     let updated_factory = gtk4::SignalListItemFactory::new();
+    let column_view_for_gesture = column_view.clone();
     updated_factory.connect_setup(move |_factory, item| {
         let label = Label::new(None);
         label.set_xalign(0.0);
-        item.downcast_ref::<gtk4::ListItem>()
-            .unwrap()
-            .set_child(Some(&label));
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        attach_deselect_gesture(&label, &column_view_for_gesture, list_item);
+        list_item.set_child(Some(&label));
     });
     updated_factory.connect_bind(move |_factory, item| {
         let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();

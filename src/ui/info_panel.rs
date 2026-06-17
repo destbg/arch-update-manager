@@ -14,13 +14,21 @@ pub fn create_info_panel() -> InfoPanel {
     info_box.set_margin_end(12);
     info_box.set_margin_top(6);
     info_box.set_margin_bottom(6);
+    info_box.set_visible(false);
 
     let header = GtkBox::new(Orientation::Horizontal, 6);
 
-    let info_label = Label::new(Some("Information"));
-    info_label.set_xalign(0.0);
-    info_label.set_hexpand(true);
-    header.append(&info_label);
+    let title_box = GtkBox::new(Orientation::Vertical, 2);
+    title_box.set_hexpand(true);
+    title_box.set_valign(Align::Center);
+
+    let title_label = Label::new(Some("Information"));
+    title_label.set_xalign(0.0);
+    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    title_label.add_css_class("heading");
+    title_box.append(&title_label);
+
+    header.append(&title_box);
 
     let ignore_button = ToggleButton::new();
     ignore_button.set_icon_name("action-unavailable-symbolic");
@@ -53,10 +61,13 @@ pub fn create_info_panel() -> InfoPanel {
 
     info_box.append(&header);
 
-    let separator = Separator::new(Orientation::Horizontal);
-    info_box.append(&separator);
+    let content_box = GtkBox::new(Orientation::Vertical, 6);
+    content_box.set_vexpand(true);
 
-    let info_text = Label::new(Some("Select a package to view its information."));
+    let separator = Separator::new(Orientation::Horizontal);
+    content_box.append(&separator);
+
+    let info_text = Label::new(None);
     info_text.set_xalign(0.0);
     info_text.set_yalign(0.0);
     info_text.set_wrap(true);
@@ -70,7 +81,9 @@ pub fn create_info_panel() -> InfoPanel {
     scrolled_window.set_hexpand(true);
     scrolled_window.set_vexpand(true);
 
-    info_box.append(&scrolled_window);
+    content_box.append(&scrolled_window);
+
+    info_box.append(&content_box);
 
     let current_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let current_release_notes_url: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
@@ -108,6 +121,7 @@ pub fn create_info_panel() -> InfoPanel {
 
     return InfoPanel {
         container: info_box,
+        title_label,
         info_text,
         url_button,
         release_notes_button,
