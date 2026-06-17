@@ -138,6 +138,52 @@ pub fn save_unselected_from_store(store: &ListStore) {
     save_unselected_packages(unselected);
 }
 
+pub(crate) fn prefers_dark() -> bool {
+    return gtk4::Settings::default()
+        .map(|s| s.is_gtk_application_prefer_dark_theme())
+        .unwrap_or(false);
+}
+
+pub(crate) fn severity_color(severity: &str, dark: bool) -> &'static str {
+    return match severity.to_ascii_lowercase().as_str() {
+        "critical" => {
+            if dark {
+                "#f66151"
+            } else {
+                "#e01b24"
+            }
+        }
+        "high" => {
+            if dark {
+                "#ffa348"
+            } else {
+                "#e66100"
+            }
+        }
+        "medium" => {
+            if dark {
+                "#f5c211"
+            } else {
+                "#e5a50a"
+            }
+        }
+        "low" => {
+            if dark {
+                "#62a0ea"
+            } else {
+                "#3584e4"
+            }
+        }
+        _ => {
+            if dark {
+                "#c0bfbc"
+            } else {
+                "#9a9996"
+            }
+        }
+    };
+}
+
 fn apply_favorite_state(weak: &WeakRef<ToggleButton>, is_favorite: bool) {
     let Some(button) = weak.upgrade() else {
         return;
@@ -731,7 +777,10 @@ fn name_markup(data: &PackageUpdate) -> String {
         markup.push_str(&badge("orphaned", if dark { "#f5c211" } else { "#e5a50a" }));
     }
     if data.out_of_date.is_some() {
-        markup.push_str(&badge("out of date", if dark { "#c0bfbc" } else { "#9a9996" }));
+        markup.push_str(&badge(
+            "out of date",
+            if dark { "#c0bfbc" } else { "#9a9996" },
+        ));
     }
     if let Some(severity) = &data.security_severity {
         markup.push_str(&badge(severity, severity_color(severity, dark)));
@@ -740,55 +789,9 @@ fn name_markup(data: &PackageUpdate) -> String {
     return markup;
 }
 
-fn prefers_dark() -> bool {
-    return gtk4::Settings::default()
-        .map(|s| s.is_gtk_application_prefer_dark_theme())
-        .unwrap_or(false);
-}
-
 fn badge(text: &str, color: &str) -> String {
     let safe = glib::markup_escape_text(text);
     return format!(" <span foreground=\"{}\">[{}]</span>", color, safe);
-}
-
-fn severity_color(severity: &str, dark: bool) -> &'static str {
-    return match severity.to_ascii_lowercase().as_str() {
-        "critical" => {
-            if dark {
-                "#f66151"
-            } else {
-                "#e01b24"
-            }
-        }
-        "high" => {
-            if dark {
-                "#ffa348"
-            } else {
-                "#e66100"
-            }
-        }
-        "medium" => {
-            if dark {
-                "#f5c211"
-            } else {
-                "#e5a50a"
-            }
-        }
-        "low" => {
-            if dark {
-                "#62a0ea"
-            } else {
-                "#3584e4"
-            }
-        }
-        _ => {
-            if dark {
-                "#c0bfbc"
-            } else {
-                "#9a9996"
-            }
-        }
-    };
 }
 
 fn format_build_date(timestamp: i64) -> String {

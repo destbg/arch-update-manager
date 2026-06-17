@@ -27,6 +27,7 @@ use crate::ui::post_update_page::create_post_update_page;
 use crate::ui::settings_dialog::show_settings_dialog;
 use crate::ui::terminal_page::create_terminal_page;
 use crate::ui::toolbar::create_toolbar;
+use crate::ui::vulnerabilities_dialog::show_vulnerabilities_dialog;
 use gio::ListStore;
 use gtk4::prelude::*;
 use gtk4::{
@@ -85,6 +86,17 @@ pub fn build_ui(app: &Application) {
         });
 
         header_bar.pack_end(&news_button);
+
+        let vulnerabilities_button = Button::from_icon_name("security-high-symbolic");
+        vulnerabilities_button.set_tooltip_text(Some("Open vulnerabilities (no fix available)"));
+
+        let window_for_vulnerabilities = window.clone();
+        vulnerabilities_button.connect_clicked(move |_| {
+            log_info!("header: Security clicked");
+            show_vulnerabilities_dialog(&window_for_vulnerabilities);
+        });
+
+        header_bar.pack_end(&vulnerabilities_button);
     }
 
     window.set_titlebar(Some(&header_bar));

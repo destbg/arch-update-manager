@@ -17,5 +17,6 @@ pub mod post_update_page;
 pub mod settings_dialog;
 pub mod terminal_page;
 pub mod toolbar;
+pub mod vulnerabilities_dialog;
 
 pub use main_window::build_ui;

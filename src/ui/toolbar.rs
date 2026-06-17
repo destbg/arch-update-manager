@@ -19,6 +19,7 @@ use crate::ui::main_window::{
 };
 use crate::ui::package_list::{save_unselected_from_store, update_statusbar};
 use crate::ui::settings_dialog::show_settings_dialog;
+use crate::ui::vulnerabilities_dialog::show_vulnerabilities_dialog;
 use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
@@ -159,6 +160,24 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
 
         let separator3 = Separator::new(Orientation::Vertical);
         toolbar.append(&separator3);
+
+        let vulnerabilities_btn = Button::new();
+        vulnerabilities_btn.set_child(Some(&create_button_content(
+            "security-high-symbolic",
+            "Security",
+        )));
+        vulnerabilities_btn.set_tooltip_text(Some("Open vulnerabilities (no fix available)"));
+        vulnerabilities_btn.connect_clicked(clone!(
+            #[weak]
+            toolbar,
+            move |_| {
+                log_info!("toolbar: Security clicked");
+                if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
+                    show_vulnerabilities_dialog(&window);
+                }
+            }
+        ));
+        toolbar.append(&vulnerabilities_btn);
 
         let news_btn = Button::new();
         news_btn.set_child(Some(&create_button_content(

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -8,8 +8,10 @@ use alpm::vercmp;
 
 use crate::constants::{AUR_NAME, FLATPAK_NAME};
 use crate::helpers::elevated::chown_to_user;
+use crate::helpers::installed_packages::get_all_installed_packages;
 use crate::helpers::network::http_get;
 use crate::helpers::tray_state::state_dir;
+use crate::models::open_vulnerability::OpenVulnerability;
 use crate::models::package_update::PackageUpdate;
 use crate::models::security_fix::SecurityFix;
 
@@ -71,6 +73,92 @@ pub fn enrich_with_security(updates: &mut [PackageUpdate]) {
             update.security_issues = issues;
         }
     }
+}
+
+pub fn get_open_vulnerabilities() -> Option<Vec<OpenVulnerability>> {
+    let json = load_tracker_json()?;
+    let value = serde_json::from_str::<serde_json::Value>(&json).ok()?;
+    let groups = value.as_array()?;
+
+    let installed: HashSet<String> = get_all_installed_packages().into_iter().collect();
+    let mut per_package: HashMap<String, OpenVulnerability> = HashMap::new();
+
+    for group in groups {
+        let status = group.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        if !status.eq_ignore_ascii_case("Vulnerable") {
+            continue;
+        }
+        let has_fix = group
+            .get("fixed")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        if has_fix {
+            continue;
+        }
+
+        let severity = group
+            .get("severity")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let vuln_type = group
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let issues: Vec<String> = group
+            .get("issues")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|i| i.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let Some(packages) = group.get("packages").and_then(|v| v.as_array()) else {
+            continue;
+        };
+
+        for pkg in packages {
+            let Some(name) = pkg.as_str() else {
+                continue;
+            };
+            if !installed.contains(name) {
+                continue;
+            }
+
+            let entry = per_package
+                .entry(name.to_string())
+                .or_insert_with(|| OpenVulnerability {
+                    package: name.to_string(),
+                    severity: severity.clone(),
+                    issues: Vec::new(),
+                    types: Vec::new(),
+                });
+
+            if severity_rank(&severity) > severity_rank(&entry.severity) {
+                entry.severity = severity.clone();
+            }
+            for issue in &issues {
+                if !entry.issues.contains(issue) {
+                    entry.issues.push(issue.clone());
+                }
+            }
+            if !vuln_type.is_empty() && !entry.types.contains(&vuln_type) {
+                entry.types.push(vuln_type.clone());
+            }
+        }
+    }
+
+    let mut result: Vec<OpenVulnerability> = per_package.into_values().collect();
+    result.sort_by(|a, b| {
+        severity_rank(&b.severity)
+            .cmp(&severity_rank(&a.severity))
+            .then_with(|| a.package.cmp(&b.package))
+    });
+
+    return Some(result);
 }
 
 fn parse_fixes(json: &str) -> HashMap<String, Vec<SecurityFix>> {
