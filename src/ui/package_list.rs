@@ -79,6 +79,7 @@ pub fn create_package_list(
     create_name_column(&column_view);
     create_version_column(&column_view);
     create_size_column(&column_view);
+    create_updated_column(&column_view);
 
     return (column_view, store, statusbar, filter);
 }
@@ -612,8 +613,14 @@ fn create_name_column(column_view: &ColumnView) {
         let desc_label = name_label.next_sibling().and_downcast::<Label>().unwrap();
         desc_label.set_wrap(true);
 
-        name_label.set_text(&data.name);
+        name_label.set_markup(&name_markup(&data));
         desc_label.set_text(&data.description);
+
+        if data.security_issues.is_empty() {
+            name_label.set_tooltip_text(None);
+        } else {
+            name_label.set_tooltip_text(Some(&data.security_issues.join(", ")));
+        }
 
         unsafe {
             if let Some(state) = vbox.data::<Rc<RefCell<Option<PackageUpdate>>>>("ctx_pkg") {
@@ -714,4 +721,109 @@ fn create_size_column(column_view: &ColumnView) {
         return a.data().size.cmp(&b.data().size);
     })));
     column_view.append_column(&size_column);
+}
+
+fn name_markup(data: &PackageUpdate) -> String {
+    let mut markup = glib::markup_escape_text(&data.name).to_string();
+
+    if data.orphaned {
+        markup.push_str(&badge("orphaned", "#e5a50a"));
+    }
+    if data.out_of_date.is_some() {
+        markup.push_str(&badge("out of date", "#9a9996"));
+    }
+    if let Some(severity) = &data.security_severity {
+        markup.push_str(&badge(severity, severity_color(severity)));
+    }
+
+    return markup;
+}
+
+fn badge(text: &str, color: &str) -> String {
+    let safe = glib::markup_escape_text(text);
+    return format!(" <span foreground=\"{}\">[{}]</span>", color, safe);
+}
+
+fn severity_color(severity: &str) -> &'static str {
+    return match severity.to_ascii_lowercase().as_str() {
+        "critical" => "#e01b24",
+        "high" => "#e66100",
+        "medium" => "#e5a50a",
+        "low" => "#3584e4",
+        _ => "#9a9996",
+    };
+}
+
+fn format_build_date(timestamp: i64) -> String {
+    use chrono::{Local, TimeZone, Utc};
+
+    const HOUR: i64 = 3600;
+    const DAY: i64 = 24 * HOUR;
+    const WEEK: i64 = 7 * DAY;
+
+    let absolute_date = || {
+        Local
+            .timestamp_opt(timestamp, 0)
+            .single()
+            .map(|dt| dt.format("%Y-%m-%d").to_string())
+            .unwrap_or_default()
+    };
+
+    let diff = Utc::now().timestamp() - timestamp;
+    if diff < 0 || diff >= WEEK {
+        return absolute_date();
+    }
+
+    if diff < HOUR {
+        let minutes = diff / 60;
+        if minutes < 1 {
+            return "just now".to_string();
+        }
+        return format!("{} minute{} ago", minutes, plural(minutes));
+    }
+
+    if diff < DAY {
+        let hours = diff / HOUR;
+        return format!("{} hour{} ago", hours, plural(hours));
+    }
+
+    let days = diff / DAY;
+    return format!("{} day{} ago", days, plural(days));
+}
+
+fn plural(n: i64) -> &'static str {
+    return if n == 1 { "" } else { "s" };
+}
+
+fn create_updated_column(column_view: &ColumnView) {
+    let updated_factory = gtk4::SignalListItemFactory::new();
+    updated_factory.connect_setup(move |_factory, item| {
+        let label = Label::new(None);
+        label.set_xalign(0.0);
+        item.downcast_ref::<gtk4::ListItem>()
+            .unwrap()
+            .set_child(Some(&label));
+    });
+    updated_factory.connect_bind(move |_factory, item| {
+        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
+        let obj = list_item
+            .item()
+            .and_downcast::<PackageUpdateObject>()
+            .unwrap();
+        let data = obj.data();
+        let label = list_item.child().and_downcast::<Label>().unwrap();
+
+        let text = match data.build_date {
+            Some(ts) => format_build_date(ts),
+            None => String::new(),
+        };
+        label.set_text(&text);
+    });
+    let updated_column = ColumnViewColumn::new(Some("Updated"), Some(updated_factory));
+    updated_column.set_fixed_width(130);
+    updated_column.set_visible(load_settings().show_updated_column);
+    updated_column.set_sorter(Some(&package_sorter(|a, b| {
+        return a.data().build_date.cmp(&b.data().build_date);
+    })));
+    column_view.append_column(&updated_column);
 }

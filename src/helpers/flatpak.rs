@@ -116,6 +116,11 @@ pub fn get_flatpak_updates() -> Result<Vec<PackageUpdate>> {
                 new_version,
                 size: download_size,
                 url,
+                build_date: None,
+                out_of_date: None,
+                orphaned: false,
+                security_severity: None,
+                security_issues: Vec::new(),
                 flatpak_installation: Some(installation),
             });
         }

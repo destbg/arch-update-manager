@@ -1,4 +1,5 @@
 pub mod app_settings;
+pub mod aur_info;
 pub mod aur_managers;
 pub mod cache_candidates;
 pub mod cached_version;
@@ -18,6 +19,7 @@ pub mod post_update_page;
 pub mod repo_switch;
 pub mod section;
 pub mod section_visibility;
+pub mod security_fix;
 pub mod service_restart_outcome;
 pub mod service_row_state;
 pub mod shelly_update;

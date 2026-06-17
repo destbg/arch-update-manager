@@ -29,6 +29,7 @@ pub fn show_settings_dialog(
     parent: &ApplicationWindow,
     settings: &AppSettings,
     favorites_column: Option<gtk4::ColumnViewColumn>,
+    updated_column: Option<gtk4::ColumnViewColumn>,
     package_store: Option<ListStore>,
 ) {
     install_settings_css();
@@ -88,7 +89,8 @@ pub fn show_settings_dialog(
     stack.add_titled(&wrap_tab(&pacman_container), Some("pacman"), "Pacman");
 
     let interface_container = build_tab_container();
-    let show_desc_check = create_show_descriptions_group(settings, &interface_container);
+    let (show_desc_check, show_updated_check) =
+        create_show_descriptions_group(settings, &interface_container);
     let post_update_check = create_post_update_group(settings, &interface_container);
     let (fav_enable_check, fav_show_col_check, manage_btn, mode_btn) =
         create_favorites_group(settings, &interface_container, parent);
@@ -133,6 +135,7 @@ pub fn show_settings_dialog(
         let skip_metered_check = skip_metered_check.clone();
         let skip_battery_check = skip_battery_check.clone();
         let show_desc_check = show_desc_check.clone();
+        let show_updated_check = show_updated_check.clone();
         let log_retention_spin = log_retention_spin.clone();
 
         Rc::new(move || {
@@ -205,6 +208,7 @@ pub fn show_settings_dialog(
             new_settings.skip_check_on_battery =
                 system_tray_check.is_active() && skip_battery_check.is_active();
             new_settings.show_package_descriptions = show_desc_check.is_active();
+            new_settings.show_updated_column = show_updated_check.is_active();
             new_settings.log_retention_days = log_retention_spin.value() as u32;
 
             if let Err(e) = save_settings(&new_settings) {
@@ -419,6 +423,14 @@ pub fn show_settings_dialog(
         }
     });
 
+    let save_all_clone = save_all.clone();
+    show_updated_check.connect_toggled(move |check| {
+        if let Some(col) = &updated_column {
+            col.set_visible(check.is_active());
+        }
+        save_all_clone();
+    });
+
     dialog.present();
 }
 
@@ -474,7 +486,7 @@ fn create_aur_group(
 fn create_show_descriptions_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
-) -> gtk4::CheckButton {
+) -> (gtk4::CheckButton, gtk4::CheckButton) {
     let section = create_preference_group(
         "Package List Display",
         "Show a short description under each package name in the update list.",
@@ -485,9 +497,15 @@ fn create_show_descriptions_group(
     check.set_active(settings.show_package_descriptions);
     section.append(&check);
 
+    let updated_check = gtk4::CheckButton::with_label("Show update date column");
+    updated_check.add_css_class("settings-check");
+    updated_check.set_active(settings.show_updated_column);
+    updated_check.set_margin_top(8);
+    section.append(&updated_check);
+
     main_container.append(&section);
 
-    return check;
+    return (check, updated_check);
 }
 
 fn create_system_tray_group(

@@ -18,6 +18,7 @@ pub mod post_update;
 pub mod power;
 pub mod release_notes;
 pub mod repo_switches;
+pub mod security;
 pub mod settings;
 pub mod snapper;
 pub mod snooze;

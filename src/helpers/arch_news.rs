@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 
 use crate::helpers::elevated::chown_to_user;
+use crate::helpers::network::http_get;
 use crate::helpers::tray_state::state_dir;
 use crate::models::news_item::NewsItem;
 use crate::models::news_state::NewsState;
@@ -51,40 +51,6 @@ fn fetch_arch_news() -> Result<Vec<NewsItem>> {
     let mut items = parse_news(&body);
     items.sort_by(|a, b| b.pub_date.cmp(&a.pub_date));
     return Ok(items);
-}
-
-fn http_get(url: &str, timeout_secs: u32) -> Result<String> {
-    let timeout = timeout_secs.to_string();
-
-    if let Ok(output) = Command::new("curl")
-        .args([
-            "-fsSL",
-            "--max-time",
-            &timeout,
-            "--connect-timeout",
-            &timeout,
-            url,
-        ])
-        .output()
-    {
-        if output.status.success() {
-            return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
-        }
-    }
-
-    if let Ok(output) = Command::new("wget")
-        .args(["-q", "-T", &timeout, "-t", "1", "-O", "-", url])
-        .output()
-    {
-        if output.status.success() {
-            return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
-        }
-    }
-
-    return Err(anyhow::anyhow!(
-        "Failed to fetch {} (curl and wget both failed or timed out)",
-        url
-    ));
 }
 
 fn parse_news(xml: &str) -> Vec<NewsItem> {

@@ -1,13 +1,15 @@
+use alpm::{Alpm, SigLevel};
 use anyhow::{Context, Result};
 use regex::Regex;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::process::Command;
 use std::{error, fmt};
 
 use crate::helpers::aur::get_aur_updates;
 use crate::helpers::flatpak::get_flatpak_updates;
+use crate::helpers::security::enrich_with_security;
 use crate::helpers::settings::load_settings;
 use crate::models::package_info::PackageInfo;
 use crate::models::package_update::PackageUpdate;
@@ -100,6 +102,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
             .collect();
         let (package_info_map, repo_sizes_map) = get_batch_repository_info(&package_names)?;
         let installed_sizes_map = get_batch_installed_sizes(&package_names)?;
+        let build_dates_map = get_build_dates(&package_names);
 
         for (package_name, current_version, new_version) in package_updates {
             let (description, repository, url) =
@@ -127,6 +130,8 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 .unwrap_or_else(|| "Unknown".to_string());
             let size = calculate_size_difference(&current_size, &new_size);
 
+            let build_date = build_dates_map.get(&package_name).copied();
+
             updates.push(PackageUpdate {
                 name: package_name,
                 new_version,
@@ -136,6 +141,11 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 selected: true,
                 size,
                 url,
+                build_date,
+                out_of_date: None,
+                orphaned: false,
+                security_severity: None,
+                security_issues: Vec::new(),
                 flatpak_installation: None,
             });
         }
@@ -163,6 +173,8 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
             }
         }
     }
+
+    enrich_with_security(&mut updates);
 
     updates.sort_by(|a, b| {
         let a_is_core = a.repository.contains("core");
@@ -266,6 +278,37 @@ fn get_batch_repository_info(
     }
 
     return Ok((package_info_map, repo_sizes_map));
+}
+
+fn get_build_dates(package_names: &[&str]) -> HashMap<String, i64> {
+    let mut build_dates = HashMap::new();
+    if package_names.is_empty() {
+        return build_dates;
+    }
+
+    let Ok(conf) = pacmanconf::Config::new() else {
+        return build_dates;
+    };
+    let Ok(alpm) = Alpm::new(conf.root_dir.as_str(), conf.db_path.as_str()) else {
+        return build_dates;
+    };
+    for repo in &conf.repos {
+        let _ = alpm.register_syncdb(repo.name.as_str(), SigLevel::NONE);
+    }
+
+    let wanted: HashSet<&str> = package_names.iter().copied().collect();
+    for db in alpm.syncdbs() {
+        for name in &wanted {
+            if build_dates.contains_key(*name) {
+                continue;
+            }
+            if let Ok(pkg) = db.pkg(*name) {
+                build_dates.insert((*name).to_string(), pkg.build_date());
+            }
+        }
+    }
+
+    return build_dates;
 }
 
 fn get_batch_installed_sizes(

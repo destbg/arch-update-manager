@@ -63,8 +63,15 @@ pub fn build_ui(app: &Application) {
             log_info!("header: Settings clicked");
             let settings = load_settings();
             let favorites_column = find_favorites_column(&window_clone);
+            let updated_column = find_updated_column(&window_clone);
             let package_store = find_package_store(&window_clone);
-            show_settings_dialog(&window_clone, &settings, favorites_column, package_store);
+            show_settings_dialog(
+                &window_clone,
+                &settings,
+                favorites_column,
+                updated_column,
+                package_store,
+            );
         });
 
         header_bar.pack_end(&settings_button);
@@ -390,6 +397,14 @@ fn wire_post_update_back_button(page: &PostUpdatePage, stack: &Stack, window: &A
 }
 
 pub fn find_favorites_column(window: &ApplicationWindow) -> Option<ColumnViewColumn> {
+    return find_column(window, 0);
+}
+
+pub fn find_updated_column(window: &ApplicationWindow) -> Option<ColumnViewColumn> {
+    return find_column(window, 6);
+}
+
+fn find_column(window: &ApplicationWindow, index: u32) -> Option<ColumnViewColumn> {
     let main_box = window.child().and_downcast::<GtkBox>()?;
     let stack = main_box.first_child().and_downcast::<Stack>()?;
     let content_box = stack.child_by_name("content").and_downcast::<GtkBox>()?;
@@ -401,7 +416,7 @@ pub fn find_favorites_column(window: &ApplicationWindow) -> Option<ColumnViewCol
     let column_view = scrolled.child().and_downcast::<ColumnView>()?;
     column_view
         .columns()
-        .item(0)
+        .item(index)
         .and_downcast::<ColumnViewColumn>()
 }
 

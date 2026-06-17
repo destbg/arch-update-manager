@@ -1,14 +1,18 @@
 use crate::{
     constants::AUR_NAME,
     helpers::elevated::get_original_user,
+    helpers::network::http_get,
     helpers::settings::{get_effective_aur_helper, load_settings},
     models::{
-        aur_managers::AurManagers, package_update::PackageUpdate, shelly_update::ShellyUpdate,
+        aur_info::AurInfo, aur_managers::AurManagers, package_update::PackageUpdate,
+        shelly_update::ShellyUpdate,
     },
 };
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::process::Command;
+
+const AUR_RPC_TIMEOUT_SECS: u32 = 5;
 
 pub fn detect_aur_helper() -> Option<AurManagers> {
     let settings = load_settings();
@@ -111,8 +115,108 @@ pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut updates = parse_aur_updates(&stdout, &helper)?;
-    enrich_with_upstream_urls(&mut updates, &helper);
+    enrich_with_aur_info(&mut updates);
     return Ok(updates);
+}
+
+fn enrich_with_aur_info(updates: &mut [PackageUpdate]) {
+    if updates.is_empty() {
+        return;
+    }
+
+    let names: Vec<&str> = updates.iter().map(|u| u.name.as_str()).collect();
+    let info_map = fetch_aur_info(&names);
+    if info_map.is_empty() {
+        return;
+    }
+
+    for update in updates.iter_mut() {
+        let Some(info) = info_map.get(&update.name) else {
+            continue;
+        };
+
+        if let Some(description) = &info.description {
+            if !description.is_empty() {
+                update.description = description.clone();
+            }
+        }
+        if let Some(url) = &info.url {
+            if !url.is_empty() {
+                update.url = Some(url.clone());
+            }
+        }
+        update.build_date = info.last_modified;
+        update.out_of_date = info.out_of_date;
+        update.orphaned = info.maintainer.is_none();
+    }
+}
+
+fn fetch_aur_info(names: &[&str]) -> HashMap<String, AurInfo> {
+    let mut map = HashMap::new();
+    if names.is_empty() {
+        return map;
+    }
+
+    let url = aur_rpc_info_url(names);
+    let Ok(body) = http_get(&url, AUR_RPC_TIMEOUT_SECS) else {
+        return map;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) else {
+        return map;
+    };
+    let Some(results) = json.get("results").and_then(|r| r.as_array()) else {
+        return map;
+    };
+
+    for entry in results {
+        let Some(name) = entry.get("Name").and_then(|n| n.as_str()) else {
+            continue;
+        };
+        let str_field = |key: &str| {
+            entry
+                .get(key)
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        };
+        map.insert(
+            name.to_string(),
+            AurInfo {
+                description: str_field("Description"),
+                url: str_field("URL"),
+                last_modified: entry.get("LastModified").and_then(|v| v.as_i64()),
+                out_of_date: entry.get("OutOfDate").and_then(|v| v.as_i64()),
+                maintainer: str_field("Maintainer"),
+            },
+        );
+    }
+
+    return map;
+}
+
+fn aur_rpc_info_url(names: &[&str]) -> String {
+    let mut url = String::from("https://aur.archlinux.org/rpc/v5/info?");
+    for (i, name) in names.iter().enumerate() {
+        if i > 0 {
+            url.push('&');
+        }
+
+        url.push_str("arg%5B%5D=");
+        url.push_str(&url_encode(name));
+    }
+    return url;
+}
+
+fn url_encode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    return out;
 }
 
 pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
@@ -146,68 +250,6 @@ pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
         command_parts.extend(args.into_iter().map(|s| s.to_string()));
         return Ok(command_parts);
     }
-}
-
-fn enrich_with_upstream_urls(updates: &mut [PackageUpdate], helper: &AurManagers) {
-    if updates.is_empty() {
-        return;
-    }
-
-    let info_args = helper.info_args();
-    if info_args.is_empty() {
-        return;
-    }
-
-    let names: Vec<&str> = updates.iter().map(|u| u.name.as_str()).collect();
-    let mut args: Vec<&str> = info_args.iter().copied().collect();
-    args.extend(names.iter().copied());
-
-    let Ok(output) = Command::new(helper.command()).args(&args).output() else {
-        return;
-    };
-    if !output.status.success() {
-        return;
-    }
-
-    let info = String::from_utf8_lossy(&output.stdout);
-    let upstream_urls = parse_upstream_urls(&info);
-
-    for update in updates.iter_mut() {
-        if let Some(url) = upstream_urls.get(&update.name) {
-            update.url = Some(url.clone());
-        }
-    }
-}
-
-fn parse_upstream_urls(info: &str) -> HashMap<String, String> {
-    let mut map: HashMap<String, String> = HashMap::new();
-    let mut current_name: Option<String> = None;
-
-    for line in info.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            current_name = None;
-            continue;
-        }
-
-        let Some((field, value)) = trimmed.split_once(':') else {
-            continue;
-        };
-        let field = field.trim();
-        let value = value.trim();
-
-        if field == "Name" {
-            current_name = Some(value.to_string());
-        } else if field == "URL" {
-            if let Some(name) = &current_name {
-                if !value.is_empty() && value != "None" && !map.contains_key(name) {
-                    map.insert(name.clone(), value.to_string());
-                }
-            }
-        }
-    }
-
-    return map;
 }
 
 fn parse_aur_updates(output: &str, helper: &AurManagers) -> Result<Vec<PackageUpdate>> {
@@ -255,6 +297,11 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             current_version: e.current_version,
             new_version: e.new_version,
             name: e.name,
+            build_date: None,
+            out_of_date: None,
+            orphaned: false,
+            security_severity: None,
+            security_issues: Vec::new(),
             flatpak_installation: None,
         })
         .collect());
@@ -280,6 +327,11 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
                 "https://aur.archlinux.org/packages/{}",
                 package_name
             )),
+            build_date: None,
+            out_of_date: None,
+            orphaned: false,
+            security_severity: None,
+            security_issues: Vec::new(),
             flatpak_installation: None,
         }));
     }
@@ -311,6 +363,11 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
                 "https://aur.archlinux.org/packages/{}",
                 package_name
             )),
+            build_date: None,
+            out_of_date: None,
+            orphaned: false,
+            security_severity: None,
+            security_issues: Vec::new(),
             flatpak_installation: None,
         }));
     }
