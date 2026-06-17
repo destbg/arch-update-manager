@@ -11,8 +11,8 @@ use std::rc::Rc;
 use crate::helpers::elevated::spawn_as_user_or_root;
 use crate::helpers::flatpak::{build_flatpak_uninstall_command, get_unused_flatpak_runtimes};
 use crate::helpers::post_update::{
-    get_cache_candidates, get_orphan_packages, get_pacnew_files, get_services_needing_restart,
-    is_kernel_reboot_pending, is_meld_available, restart_service,
+    clean_cache, get_cache_candidates, get_orphan_packages, get_pacnew_files,
+    get_services_needing_restart, is_kernel_reboot_pending, is_meld_available, restart_service,
 };
 use crate::helpers::repo_switches::detect_repo_switches;
 use crate::helpers::settings::load_settings;
@@ -1190,6 +1190,7 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
     let keep_old = settings.keep_old_packages;
     let keep_uninstalled = settings.keep_uninstalled_packages;
     let flatpak_enabled = settings.enable_flatpak_support;
+    let auto_clean_cache = settings.auto_clean_cache;
 
     glib::spawn_future_local(async move {
         let orphans_result = gio::spawn_blocking(|| get_orphan_packages()).await;
@@ -1204,6 +1205,14 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
                 Vec::new()
             }
         };
+
+        if auto_clean_cache {
+            match gio::spawn_blocking(move || clean_cache(keep_old, keep_uninstalled)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => eprintln!("Failed to auto-clean cache: {}", e),
+                Err(e) => eprintln!("Cache clean thread failed: {:?}", e),
+            }
+        }
 
         let cache_result =
             gio::spawn_blocking(move || get_cache_candidates(keep_old, keep_uninstalled)).await;

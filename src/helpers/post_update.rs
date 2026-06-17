@@ -190,6 +190,28 @@ pub fn is_kernel_reboot_pending() -> bool {
     return !Path::new(&kernel_path).exists();
 }
 
+pub fn clean_cache(keep_old: u32, keep_uninstalled: u32) -> Result<()> {
+    let keep_old_arg = format!("-k{}", keep_old);
+    let old_status = Command::new("paccache")
+        .args(["-r", &keep_old_arg])
+        .status()?;
+    if !old_status.success() {
+        return Err(anyhow::anyhow!("paccache failed to remove old packages"));
+    }
+
+    let keep_uninstalled_arg = format!("-k{}", keep_uninstalled);
+    let uninstalled_status = Command::new("paccache")
+        .args(["-r", "-u", &keep_uninstalled_arg])
+        .status()?;
+    if !uninstalled_status.success() {
+        return Err(anyhow::anyhow!(
+            "paccache failed to remove uninstalled packages"
+        ));
+    }
+
+    return Ok(());
+}
+
 fn extract_service_name(line: &str) -> Option<String> {
     if let Some(start) = line.find('\'') {
         if let Some(end) = line[start + 1..].find('\'') {

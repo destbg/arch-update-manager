@@ -84,7 +84,8 @@ pub fn show_settings_dialog(
 
     let pacman_container = build_tab_container();
     let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &pacman_container);
-    let (keep_old_spin, keep_uninstalled_spin) = create_cache_group(settings, &pacman_container);
+    let (keep_old_spin, keep_uninstalled_spin, auto_clean_cache_check) =
+        create_cache_group(settings, &pacman_container);
     create_blacklist_group(&pacman_container, parent);
     stack.add_titled(&wrap_tab(&pacman_container), Some("pacman"), "Pacman");
 
@@ -126,6 +127,7 @@ pub fn show_settings_dialog(
         let flatpak_enable_check = flatpak_enable_check.clone();
         let keep_old_spin = keep_old_spin.clone();
         let keep_uninstalled_spin = keep_uninstalled_spin.clone();
+        let auto_clean_cache_check = auto_clean_cache_check.clone();
         let system_tray_check = system_tray_check.clone();
         let always_visible_check = always_visible_check.clone();
         let only_favorites_check = only_favorites_check.clone();
@@ -191,6 +193,7 @@ pub fn show_settings_dialog(
             new_settings.enable_flatpak_support = flatpak_enable_check.is_active();
             new_settings.keep_old_packages = keep_old_spin.value() as u32;
             new_settings.keep_uninstalled_packages = keep_uninstalled_spin.value() as u32;
+            new_settings.auto_clean_cache = auto_clean_cache_check.is_active();
             new_settings.enable_system_tray = system_tray_check.is_active();
             new_settings.tray_always_visible =
                 system_tray_check.is_active() && always_visible_check.is_active();
@@ -325,6 +328,11 @@ pub fn show_settings_dialog(
 
     let save_all_clone = save_all.clone();
     keep_uninstalled_spin.connect_value_changed(move |_| {
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    auto_clean_cache_check.connect_toggled(move |_| {
         save_all_clone();
     });
 
@@ -1146,7 +1154,7 @@ fn create_flatpak_group(settings: &AppSettings, main_container: &gtk4::Box) -> g
 fn create_cache_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
-) -> (gtk4::SpinButton, gtk4::SpinButton) {
+) -> (gtk4::SpinButton, gtk4::SpinButton, gtk4::CheckButton) {
     let section = create_preference_group(
         "Pacman Cache",
         "Choose how many old and uninstalled package versions to keep in the pacman cache. The cleanup runs from the post-update checks page.",
@@ -1184,9 +1192,17 @@ fn create_cache_group(
     uninst_box.append(&uninst_spin);
 
     section.append(&uninst_box);
+
+    let auto_clean_check =
+        gtk4::CheckButton::with_label("Clean the cache automatically after each update");
+    auto_clean_check.add_css_class("settings-check");
+    auto_clean_check.set_active(settings.auto_clean_cache);
+    auto_clean_check.set_margin_top(8);
+    section.append(&auto_clean_check);
+
     main_container.append(&section);
 
-    return (old_spin, uninst_spin);
+    return (old_spin, uninst_spin, auto_clean_check);
 }
 
 fn create_blacklist_group(main_container: &gtk4::Box, parent: &ApplicationWindow) {

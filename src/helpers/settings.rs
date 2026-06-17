@@ -29,6 +29,7 @@ fn default_settings() -> AppSettings {
         enable_devel_aur: false,
         keep_old_packages: 3,
         keep_uninstalled_packages: 0,
+        auto_clean_cache: false,
         run_post_update_checks: true,
         create_snapper_snapshot: false,
         enable_system_tray: false,

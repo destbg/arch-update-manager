@@ -48,6 +48,8 @@ pub struct AppSettings {
     pub keep_old_packages: u32,
     #[serde(default)]
     pub keep_uninstalled_packages: u32,
+    #[serde(default)]
+    pub auto_clean_cache: bool,
     #[serde(default = "default_run_post_update_checks")]
     pub run_post_update_checks: bool,
     #[serde(default)]
