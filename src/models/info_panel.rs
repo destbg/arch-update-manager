@@ -8,6 +8,7 @@ pub struct InfoPanel {
     pub info_text: Label,
     pub url_button: Button,
     pub release_notes_button: Button,
+    pub pkgbuild_button: Button,
     pub ignore_button: ToggleButton,
     pub ignore_handler_id: Rc<RefCell<Option<SignalHandlerId>>>,
     pub current_url: Rc<RefCell<Option<String>>>,

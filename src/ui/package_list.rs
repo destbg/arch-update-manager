@@ -724,19 +724,26 @@ fn create_size_column(column_view: &ColumnView) {
 }
 
 fn name_markup(data: &PackageUpdate) -> String {
+    let dark = prefers_dark();
     let mut markup = glib::markup_escape_text(&data.name).to_string();
 
     if data.orphaned {
-        markup.push_str(&badge("orphaned", "#e5a50a"));
+        markup.push_str(&badge("orphaned", if dark { "#f5c211" } else { "#e5a50a" }));
     }
     if data.out_of_date.is_some() {
-        markup.push_str(&badge("out of date", "#9a9996"));
+        markup.push_str(&badge("out of date", if dark { "#c0bfbc" } else { "#9a9996" }));
     }
     if let Some(severity) = &data.security_severity {
-        markup.push_str(&badge(severity, severity_color(severity)));
+        markup.push_str(&badge(severity, severity_color(severity, dark)));
     }
 
     return markup;
+}
+
+fn prefers_dark() -> bool {
+    return gtk4::Settings::default()
+        .map(|s| s.is_gtk_application_prefer_dark_theme())
+        .unwrap_or(false);
 }
 
 fn badge(text: &str, color: &str) -> String {
@@ -744,13 +751,43 @@ fn badge(text: &str, color: &str) -> String {
     return format!(" <span foreground=\"{}\">[{}]</span>", color, safe);
 }
 
-fn severity_color(severity: &str) -> &'static str {
+fn severity_color(severity: &str, dark: bool) -> &'static str {
     return match severity.to_ascii_lowercase().as_str() {
-        "critical" => "#e01b24",
-        "high" => "#e66100",
-        "medium" => "#e5a50a",
-        "low" => "#3584e4",
-        _ => "#9a9996",
+        "critical" => {
+            if dark {
+                "#f66151"
+            } else {
+                "#e01b24"
+            }
+        }
+        "high" => {
+            if dark {
+                "#ffa348"
+            } else {
+                "#e66100"
+            }
+        }
+        "medium" => {
+            if dark {
+                "#f5c211"
+            } else {
+                "#e5a50a"
+            }
+        }
+        "low" => {
+            if dark {
+                "#62a0ea"
+            } else {
+                "#3584e4"
+            }
+        }
+        _ => {
+            if dark {
+                "#c0bfbc"
+            } else {
+                "#9a9996"
+            }
+        }
     };
 }
 

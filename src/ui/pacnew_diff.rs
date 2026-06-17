@@ -176,6 +176,67 @@ pub fn show_pacnew_diff_dialog(parent: &Window, pacnew_path: &str) {
     dialog.present();
 }
 
+pub(crate) fn build_buffer(text: &str, language: Option<&sourceview5::Language>) -> Buffer {
+    let buffer = Buffer::new(None);
+    if let Some(lang) = language {
+        buffer.set_language(Some(lang));
+    }
+    if let Some(scheme) = pick_style_scheme() {
+        buffer.set_style_scheme(Some(&scheme));
+    }
+    buffer.set_highlight_syntax(true);
+    buffer.set_text(text);
+    return buffer;
+}
+
+pub(crate) fn build_source_view(buffer: &Buffer, editable: bool) -> View {
+    let view = View::with_buffer(buffer);
+    view.set_monospace(true);
+    view.set_show_line_numbers(true);
+    view.set_highlight_current_line(true);
+    view.set_editable(editable);
+    view.set_wrap_mode(gtk4::WrapMode::None);
+    view.set_top_margin(6);
+    view.set_bottom_margin(6);
+    view.set_left_margin(6);
+    view.set_right_margin(6);
+    return view;
+}
+
+pub(crate) fn wrap_in_scroll(view: &View, file_label: &str) -> GtkBox {
+    let container = GtkBox::new(Orientation::Vertical, 0);
+
+    let label = Label::new(Some(file_label));
+    label.set_xalign(0.0);
+    label.set_margin_start(8);
+    label.set_margin_top(4);
+    label.set_margin_bottom(4);
+    label.add_css_class("dim-label");
+    label.add_css_class("caption");
+    container.append(&label);
+
+    let scrolled = ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vexpand(true)
+        .child(view)
+        .build();
+
+    container.append(&scrolled);
+    return container;
+}
+
+pub(crate) fn diff_highlight_colors() -> (&'static str, &'static str) {
+    let prefer_dark = gtk4::Settings::default()
+        .map(|s| s.is_gtk_application_prefer_dark_theme())
+        .unwrap_or(false);
+
+    if prefer_dark {
+        return ("rgba(255, 110, 120, 0.22)", "rgba(90, 220, 130, 0.20)");
+    }
+    return ("rgba(220, 53, 69, 0.18)", "rgba(40, 167, 69, 0.18)");
+}
+
 fn strip_pacnew_suffix(path: &str) -> String {
     for suffix in [".pacnew", ".pacsave", ".pacorig"] {
         if let Some(stripped) = path.strip_suffix(suffix) {
@@ -203,19 +264,6 @@ fn guess_language(path: &str) -> Option<sourceview5::Language> {
     return manager.guess_language(Some(file_name), Some(content_type.as_str()));
 }
 
-fn build_buffer(text: &str, language: Option<&sourceview5::Language>) -> Buffer {
-    let buffer = Buffer::new(None);
-    if let Some(lang) = language {
-        buffer.set_language(Some(lang));
-    }
-    if let Some(scheme) = pick_style_scheme() {
-        buffer.set_style_scheme(Some(&scheme));
-    }
-    buffer.set_highlight_syntax(true);
-    buffer.set_text(text);
-    return buffer;
-}
-
 fn pick_style_scheme() -> Option<StyleScheme> {
     let manager = StyleSchemeManager::default();
     let prefer_dark = gtk4::Settings::default()
@@ -236,51 +284,15 @@ fn pick_style_scheme() -> Option<StyleScheme> {
     return manager.scheme(fallback_id);
 }
 
-fn build_source_view(buffer: &Buffer, editable: bool) -> View {
-    let view = View::with_buffer(buffer);
-    view.set_monospace(true);
-    view.set_show_line_numbers(true);
-    view.set_highlight_current_line(true);
-    view.set_editable(editable);
-    view.set_wrap_mode(gtk4::WrapMode::None);
-    view.set_top_margin(6);
-    view.set_bottom_margin(6);
-    view.set_left_margin(6);
-    view.set_right_margin(6);
-    return view;
-}
-
-fn wrap_in_scroll(view: &View, file_label: &str) -> GtkBox {
-    let container = GtkBox::new(Orientation::Vertical, 0);
-
-    let label = Label::new(Some(file_label));
-    label.set_xalign(0.0);
-    label.set_margin_start(8);
-    label.set_margin_top(4);
-    label.set_margin_bottom(4);
-    label.add_css_class("dim-label");
-    label.add_css_class("caption");
-    container.append(&label);
-
-    let scrolled = ScrolledWindow::builder()
-        .hscrollbar_policy(gtk4::PolicyType::Automatic)
-        .vscrollbar_policy(gtk4::PolicyType::Automatic)
-        .vexpand(true)
-        .child(view)
-        .build();
-
-    container.append(&scrolled);
-    return container;
-}
-
 fn apply_diff_highlight(left: &Buffer, right: &Buffer, left_text: &str, right_text: &str) {
+    let (removed_color, added_color) = diff_highlight_colors();
     let removed_tag = left.create_tag(
         Some("pacnew-removed"),
-        &[("background", &"rgba(220, 53, 69, 0.18)".to_value())],
+        &[("background", &removed_color.to_value())],
     );
     let added_tag = right.create_tag(
         Some("pacnew-added"),
-        &[("background", &"rgba(40, 167, 69, 0.18)".to_value())],
+        &[("background", &added_color.to_value())],
     );
 
     let diff = TextDiff::from_lines(left_text, right_text);

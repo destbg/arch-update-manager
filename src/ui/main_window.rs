@@ -1,4 +1,4 @@
-use crate::constants::FLATPAK_NAME;
+use crate::constants::{AUR_NAME, FLATPAK_NAME};
 use crate::helpers::arch_news::news_to_show;
 use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::elevated::open_url_as_user;
@@ -214,6 +214,7 @@ fn create_main_content(
         let info_text = info_panel.info_text.clone();
         let url_button = info_panel.url_button.clone();
         let release_notes_button = info_panel.release_notes_button.clone();
+        let pkgbuild_button = info_panel.pkgbuild_button.clone();
         let ignore_button = info_panel.ignore_button.clone();
         let ignore_handler_id = info_panel.ignore_handler_id.clone();
         let current_url = info_panel.current_url.clone();
@@ -231,6 +232,7 @@ fn create_main_content(
                 *current_release_notes_url.borrow_mut() = release_url;
 
                 *current_package.borrow_mut() = Some(package_data.name.clone());
+                pkgbuild_button.set_visible(package_data.repository == AUR_NAME);
                 let is_flatpak = package_data.repository == FLATPAK_NAME;
                 if is_flatpak {
                     ignore_button.set_visible(false);
@@ -255,6 +257,7 @@ fn create_main_content(
                 release_notes_button.set_visible(false);
 
                 *current_package.borrow_mut() = None;
+                pkgbuild_button.set_visible(false);
                 ignore_button.set_visible(false);
             }
         });

@@ -16,6 +16,7 @@
         "pango",
         "paru",
         "pikaur",
+        "PKGBUILD",
         "scrollback",
         "serde",
         "syncdb",

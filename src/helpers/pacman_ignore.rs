@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const PACMAN_CONF: &str = "/etc/pacman.conf";
-const MARKER_BEGIN: &str = "# arch-update-manager managed begin — do not edit";
+const MARKER_BEGIN: &str = "# arch-update-manager managed begin - do not edit";
 const MARKER_END: &str = "# arch-update-manager managed end";
 
 pub fn list_managed_ignores() -> Vec<String> {

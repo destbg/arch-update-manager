@@ -12,6 +12,7 @@ pub mod no_updates;
 pub mod package_files_dialog;
 pub mod package_list;
 pub mod pacnew_diff;
+pub mod pkgbuild_review_dialog;
 pub mod post_update_page;
 pub mod settings_dialog;
 pub mod terminal_page;

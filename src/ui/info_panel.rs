@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::helpers::elevated::open_url_as_user;
 use crate::log_info;
 use crate::models::info_panel::InfoPanel;
+use crate::ui::pkgbuild_review_dialog::show_pkgbuild_review_dialog;
 
 pub fn create_info_panel() -> InfoPanel {
     let info_box = GtkBox::new(Orientation::Vertical, 6);
@@ -28,6 +29,13 @@ pub fn create_info_panel() -> InfoPanel {
     ignore_button.set_halign(Align::End);
     ignore_button.set_visible(false);
     header.append(&ignore_button);
+
+    let pkgbuild_button = Button::from_icon_name("applications-engineering-symbolic");
+    pkgbuild_button.set_tooltip_text(Some("Review PKGBUILD changes"));
+    pkgbuild_button.add_css_class("flat");
+    pkgbuild_button.set_halign(Align::End);
+    pkgbuild_button.set_visible(false);
+    header.append(&pkgbuild_button);
 
     let release_notes_button = Button::from_icon_name("emblem-documents-symbolic");
     release_notes_button.set_tooltip_text(Some("Open release notes"));
@@ -84,6 +92,18 @@ pub fn create_info_panel() -> InfoPanel {
         }
     });
 
+    let current_package_for_pkgbuild = current_package.clone();
+    pkgbuild_button.connect_clicked(move |btn| {
+        let Some(package) = current_package_for_pkgbuild.borrow().clone() else {
+            return;
+        };
+        let Some(window) = btn.root().and_downcast::<gtk4::Window>() else {
+            return;
+        };
+        log_info!("info panel: review PKGBUILD {}", package);
+        show_pkgbuild_review_dialog(&window, &package);
+    });
+
     let ignore_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>> = Rc::new(RefCell::new(None));
 
     return InfoPanel {
@@ -91,6 +111,7 @@ pub fn create_info_panel() -> InfoPanel {
         info_text,
         url_button,
         release_notes_button,
+        pkgbuild_button,
         ignore_button,
         ignore_handler_id,
         current_url,

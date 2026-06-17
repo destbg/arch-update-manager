@@ -18,6 +18,7 @@ use crate::ui::downgrade_dialog::show_downgrade_dialog;
 use crate::ui::main_window::load_packages;
 use crate::ui::package_files_dialog::show_package_files_dialog;
 use crate::ui::package_list::refresh_favorite_button;
+use crate::ui::pkgbuild_review_dialog::show_pkgbuild_review_dialog;
 
 pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f64, y: f64) {
     let Some(window) = anchor.root().and_downcast::<ApplicationWindow>() else {
@@ -56,6 +57,14 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
             let name = package.name.clone();
             move || {
                 open_url_as_user(&format!("https://aur.archlinux.org/packages/{}", name));
+            }
+        });
+
+        add_action(&vbox, &popover, "Review PKGBUILD changes", {
+            let name = package.name.clone();
+            let window = window.clone();
+            move || {
+                show_pkgbuild_review_dialog(window.upcast_ref::<gtk4::Window>(), &name);
             }
         });
     } else if !is_flatpak {
@@ -119,7 +128,7 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
 
         add_separator(&vbox);
 
-        add_action(&vbox, &popover, "Downgrade…", {
+        add_action(&vbox, &popover, "Downgrade...", {
             let name = package.name.clone();
             let current_version = package.current_version.clone();
             let window = window.clone();

@@ -119,6 +119,19 @@ pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
     return Ok(updates);
 }
 
+pub(crate) fn url_encode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    return out;
+}
+
 fn enrich_with_aur_info(updates: &mut [PackageUpdate]) {
     if updates.is_empty() {
         return;
@@ -204,19 +217,6 @@ fn aur_rpc_info_url(names: &[&str]) -> String {
         url.push_str(&url_encode(name));
     }
     return url;
-}
-
-fn url_encode(s: &str) -> String {
-    let mut out = String::new();
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char);
-            }
-            _ => out.push_str(&format!("%{:02X}", b)),
-        }
-    }
-    return out;
 }
 
 pub fn install_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {

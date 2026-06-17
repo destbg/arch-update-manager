@@ -15,6 +15,7 @@ pub mod paccache_dry_result;
 pub mod package_info;
 pub mod package_object;
 pub mod package_update;
+pub mod pkgbuild_review;
 pub mod post_update_page;
 pub mod repo_switch;
 pub mod section;

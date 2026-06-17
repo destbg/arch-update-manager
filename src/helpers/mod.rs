@@ -1,5 +1,6 @@
 pub mod arch_news;
 pub mod aur;
+pub mod aur_pkgbuild;
 pub mod database_lock;
 pub mod decorations;
 pub mod desktop_apps;
