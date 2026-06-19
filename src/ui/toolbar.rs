@@ -14,9 +14,7 @@ use crate::log_info;
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
-use crate::ui::main_window::{
-    find_favorites_column, find_package_store, find_updated_column, load_packages,
-};
+use crate::ui::main_window::{find_favorites_column, find_package_store, load_packages};
 use crate::ui::package_list::{save_unselected_from_store, update_statusbar};
 use crate::ui::settings_dialog::show_settings_dialog;
 use crate::ui::vulnerabilities_dialog::show_vulnerabilities_dialog;
@@ -205,15 +203,8 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                 if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
                     let settings = load_settings();
                     let favorites_column = find_favorites_column(&window);
-                    let updated_column = find_updated_column(&window);
                     let package_store = find_package_store(&window);
-                    show_settings_dialog(
-                        &window,
-                        &settings,
-                        favorites_column,
-                        updated_column,
-                        package_store,
-                    );
+                    show_settings_dialog(&window, &settings, favorites_column, package_store);
                 }
             }
         ));

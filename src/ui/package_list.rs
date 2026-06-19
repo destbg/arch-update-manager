@@ -79,7 +79,6 @@ pub fn create_package_list(
     create_name_column(&column_view);
     create_version_column(&column_view);
     create_size_column(&column_view);
-    create_updated_column(&column_view);
 
     return (column_view, store, statusbar, filter);
 }
@@ -182,6 +181,43 @@ pub(crate) fn severity_color(severity: &str, dark: bool) -> &'static str {
             }
         }
     };
+}
+
+pub(crate) fn format_build_date(timestamp: i64) -> String {
+    use chrono::{Local, TimeZone, Utc};
+
+    const HOUR: i64 = 3600;
+    const DAY: i64 = 24 * HOUR;
+    const WEEK: i64 = 7 * DAY;
+
+    let absolute_date = || {
+        Local
+            .timestamp_opt(timestamp, 0)
+            .single()
+            .map(|dt| dt.format("%Y-%m-%d").to_string())
+            .unwrap_or_default()
+    };
+
+    let diff = Utc::now().timestamp() - timestamp;
+    if diff < 0 || diff >= WEEK {
+        return absolute_date();
+    }
+
+    if diff < HOUR {
+        let minutes = diff / 60;
+        if minutes < 1 {
+            return "just now".to_string();
+        }
+        return format!("{} minute{} ago", minutes, plural(minutes));
+    }
+
+    if diff < DAY {
+        let hours = diff / HOUR;
+        return format!("{} hour{} ago", hours, plural(hours));
+    }
+
+    let days = diff / DAY;
+    return format!("{} day{} ago", days, plural(days));
 }
 
 fn apply_favorite_state(weak: &WeakRef<ToggleButton>, is_favorite: bool) {
@@ -645,14 +681,29 @@ fn create_name_column(column_view: &ColumnView) {
     name_factory.connect_setup(move |_factory, item| {
         let vbox = GtkBox::new(Orientation::Vertical, 2);
         vbox.set_valign(gtk4::Align::Center);
+
+        let name_row = GtkBox::new(Orientation::Horizontal, 6);
         let name_label = Label::new(None);
         name_label.set_xalign(0.0);
+        name_label.set_hexpand(true);
+        name_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         name_label.set_css_classes(&["package-name"]);
+        let updated_label = Label::new(None);
+        updated_label.set_halign(gtk4::Align::End);
+        updated_label.set_valign(gtk4::Align::Center);
+        updated_label.add_css_class("dim-label");
+        updated_label.add_css_class("caption");
+        name_row.append(&name_label);
+        name_row.append(&updated_label);
+
         let desc_label = Label::new(None);
         desc_label.set_xalign(0.0);
+        desc_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        desc_label.set_max_width_chars(50);
         desc_label.set_css_classes(&["package-desc"]);
         desc_label.add_css_class("dim-label");
-        vbox.append(&name_label);
+
+        vbox.append(&name_row);
         vbox.append(&desc_label);
 
         let row_package: Rc<RefCell<Option<PackageUpdate>>> = Rc::new(RefCell::new(None));
@@ -683,9 +734,10 @@ fn create_name_column(column_view: &ColumnView) {
             .unwrap();
         let data = obj.data();
         let vbox = list_item.child().and_downcast::<GtkBox>().unwrap();
-        let name_label = vbox.first_child().and_downcast::<Label>().unwrap();
-        let desc_label = name_label.next_sibling().and_downcast::<Label>().unwrap();
-        desc_label.set_wrap(true);
+        let name_row = vbox.first_child().and_downcast::<GtkBox>().unwrap();
+        let name_label = name_row.first_child().and_downcast::<Label>().unwrap();
+        let updated_label = name_label.next_sibling().and_downcast::<Label>().unwrap();
+        let desc_label = name_row.next_sibling().and_downcast::<Label>().unwrap();
 
         name_label.set_markup(&name_markup(&data));
         desc_label.set_text(&data.description);
@@ -702,8 +754,19 @@ fn create_name_column(column_view: &ColumnView) {
             }
         }
 
-        let show_desc = load_settings().show_package_descriptions;
-        desc_label.set_visible(show_desc);
+        let settings = load_settings();
+        desc_label.set_visible(settings.show_package_descriptions);
+
+        match data.build_date {
+            Some(ts) if settings.show_updated_date => {
+                updated_label.set_text(&format_build_date(ts));
+                updated_label.set_visible(true);
+            }
+            _ => {
+                updated_label.set_text("");
+                updated_label.set_visible(false);
+            }
+        }
     });
     name_factory.connect_unbind(move |_factory, item| {
         let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
@@ -824,77 +887,6 @@ fn badge(text: &str, color: &str) -> String {
     return format!(" <span foreground=\"{}\">[{}]</span>", color, safe);
 }
 
-fn format_build_date(timestamp: i64) -> String {
-    use chrono::{Local, TimeZone, Utc};
-
-    const HOUR: i64 = 3600;
-    const DAY: i64 = 24 * HOUR;
-    const WEEK: i64 = 7 * DAY;
-
-    let absolute_date = || {
-        Local
-            .timestamp_opt(timestamp, 0)
-            .single()
-            .map(|dt| dt.format("%Y-%m-%d").to_string())
-            .unwrap_or_default()
-    };
-
-    let diff = Utc::now().timestamp() - timestamp;
-    if diff < 0 || diff >= WEEK {
-        return absolute_date();
-    }
-
-    if diff < HOUR {
-        let minutes = diff / 60;
-        if minutes < 1 {
-            return "just now".to_string();
-        }
-        return format!("{} minute{} ago", minutes, plural(minutes));
-    }
-
-    if diff < DAY {
-        let hours = diff / HOUR;
-        return format!("{} hour{} ago", hours, plural(hours));
-    }
-
-    let days = diff / DAY;
-    return format!("{} day{} ago", days, plural(days));
-}
-
 fn plural(n: i64) -> &'static str {
     return if n == 1 { "" } else { "s" };
-}
-
-fn create_updated_column(column_view: &ColumnView) {
-    let updated_factory = gtk4::SignalListItemFactory::new();
-    let column_view_for_gesture = column_view.clone();
-    updated_factory.connect_setup(move |_factory, item| {
-        let label = Label::new(None);
-        label.set_xalign(0.0);
-        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
-        attach_deselect_gesture(&label, &column_view_for_gesture, list_item);
-        list_item.set_child(Some(&label));
-    });
-    updated_factory.connect_bind(move |_factory, item| {
-        let list_item = item.downcast_ref::<gtk4::ListItem>().unwrap();
-        let obj = list_item
-            .item()
-            .and_downcast::<PackageUpdateObject>()
-            .unwrap();
-        let data = obj.data();
-        let label = list_item.child().and_downcast::<Label>().unwrap();
-
-        let text = match data.build_date {
-            Some(ts) => format_build_date(ts),
-            None => String::new(),
-        };
-        label.set_text(&text);
-    });
-    let updated_column = ColumnViewColumn::new(Some("Updated"), Some(updated_factory));
-    updated_column.set_fixed_width(130);
-    updated_column.set_visible(load_settings().show_updated_column);
-    updated_column.set_sorter(Some(&package_sorter(|a, b| {
-        return a.data().build_date.cmp(&b.data().build_date);
-    })));
-    column_view.append_column(&updated_column);
 }

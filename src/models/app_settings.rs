@@ -72,8 +72,8 @@ pub struct AppSettings {
     pub show_update_notifications: bool,
     #[serde(default = "default_show_package_descriptions")]
     pub show_package_descriptions: bool,
-    #[serde(default)]
-    pub show_updated_column: bool,
+    #[serde(default = "default_show_updated_date")]
+    pub show_updated_date: bool,
     #[serde(default = "default_log_retention_days")]
     pub log_retention_days: u32,
     #[serde(default = "default_check_arch_news")]
@@ -133,6 +133,10 @@ fn default_run_post_update_checks() -> bool {
 }
 
 fn default_show_package_descriptions() -> bool {
+    return true;
+}
+
+fn default_show_updated_date() -> bool {
     return true;
 }
 

@@ -41,7 +41,7 @@ fn default_settings() -> AppSettings {
         skip_check_on_battery: false,
         show_update_notifications: false,
         show_package_descriptions: true,
-        show_updated_column: false,
+        show_updated_date: true,
         log_retention_days: 7,
         check_arch_news: true,
     };

@@ -29,7 +29,6 @@ pub fn show_settings_dialog(
     parent: &ApplicationWindow,
     settings: &AppSettings,
     favorites_column: Option<gtk4::ColumnViewColumn>,
-    updated_column: Option<gtk4::ColumnViewColumn>,
     package_store: Option<ListStore>,
 ) {
     install_settings_css();
@@ -211,7 +210,7 @@ pub fn show_settings_dialog(
             new_settings.skip_check_on_battery =
                 system_tray_check.is_active() && skip_battery_check.is_active();
             new_settings.show_package_descriptions = show_desc_check.is_active();
-            new_settings.show_updated_column = show_updated_check.is_active();
+            new_settings.show_updated_date = show_updated_check.is_active();
             new_settings.log_retention_days = log_retention_spin.value() as u32;
 
             if let Err(e) = save_settings(&new_settings) {
@@ -432,11 +431,15 @@ pub fn show_settings_dialog(
     });
 
     let save_all_clone = save_all.clone();
-    show_updated_check.connect_toggled(move |check| {
-        if let Some(col) = &updated_column {
-            col.set_visible(check.is_active());
-        }
+    let package_store_for_updated = package_store.clone();
+    show_updated_check.connect_toggled(move |_| {
         save_all_clone();
+        if let Some(store) = &package_store_for_updated {
+            let n = store.n_items();
+            if n > 0 {
+                store.items_changed(0, n, n);
+            }
+        }
     });
 
     dialog.present();
@@ -505,9 +508,9 @@ fn create_show_descriptions_group(
     check.set_active(settings.show_package_descriptions);
     section.append(&check);
 
-    let updated_check = gtk4::CheckButton::with_label("Show update date column");
+    let updated_check = gtk4::CheckButton::with_label("Show last updated date");
     updated_check.add_css_class("settings-check");
-    updated_check.set_active(settings.show_updated_column);
+    updated_check.set_active(settings.show_updated_date);
     updated_check.set_margin_top(8);
     section.append(&updated_check);
 

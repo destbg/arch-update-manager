@@ -14,6 +14,7 @@ use crate::helpers::unselected_packages::load_unselected_packages;
 use crate::log_info;
 use crate::models::info_panel::InfoPanel;
 use crate::models::package_object::PackageUpdateObject;
+use crate::models::package_update::PackageUpdate;
 use crate::models::post_update_page::PostUpdatePage;
 use crate::models::update_error::UpdateError;
 use crate::ui::dialogs::{show_confirm_dialog, show_error_dialog};
@@ -22,7 +23,9 @@ use crate::ui::info_panel::{create_info_panel, update_ignore_button_tooltip};
 use crate::ui::loading::create_loading_page;
 use crate::ui::news_dialog::show_news_dialog;
 use crate::ui::no_updates::create_no_updates_page;
-use crate::ui::package_list::{create_package_list, update_statusbar};
+use crate::ui::package_list::{
+    create_package_list, format_build_date, prefers_dark, update_statusbar,
+};
 use crate::ui::post_update_page::create_post_update_page;
 use crate::ui::settings_dialog::show_settings_dialog;
 use crate::ui::terminal_page::create_terminal_page;
@@ -64,15 +67,8 @@ pub fn build_ui(app: &Application) {
             log_info!("header: Settings clicked");
             let settings = load_settings();
             let favorites_column = find_favorites_column(&window_clone);
-            let updated_column = find_updated_column(&window_clone);
             let package_store = find_package_store(&window_clone);
-            show_settings_dialog(
-                &window_clone,
-                &settings,
-                favorites_column,
-                updated_column,
-                package_store,
-            );
+            show_settings_dialog(&window_clone, &settings, favorites_column, package_store);
         });
 
         header_bar.pack_end(&settings_button);
@@ -238,7 +234,7 @@ fn create_main_content(
             if let Some(package_obj) = model.selected_item().and_downcast::<PackageUpdateObject>() {
                 let package_data = package_obj.data();
                 info_container.set_visible(true);
-                title_label.set_text(&package_data.name);
+                title_label.set_markup(&info_title_markup(&package_data));
                 info_text.set_text(package_data.description.as_str());
                 *current_url.borrow_mut() = package_data.url.clone();
                 url_button.set_visible(package_data.url.is_some());
@@ -420,8 +416,19 @@ pub fn find_favorites_column(window: &ApplicationWindow) -> Option<ColumnViewCol
     return find_column(window, 0);
 }
 
-pub fn find_updated_column(window: &ApplicationWindow) -> Option<ColumnViewColumn> {
-    return find_column(window, 6);
+fn info_title_markup(package: &PackageUpdate) -> String {
+    let mut markup = glib::markup_escape_text(&package.name).to_string();
+    if load_settings().show_updated_date {
+        if let Some(ts) = package.build_date {
+            let color = if prefers_dark() { "#c0bfbc" } else { "#9a9996" };
+            markup.push_str(&format!(
+                " <span foreground=\"{}\" size=\"small\">[{}]</span>",
+                color,
+                glib::markup_escape_text(&format_build_date(ts))
+            ));
+        }
+    }
+    return markup;
 }
 
 fn find_column(window: &ApplicationWindow, index: u32) -> Option<ColumnViewColumn> {
