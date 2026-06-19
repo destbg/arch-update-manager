@@ -201,6 +201,14 @@ fn is_main_app_running() -> bool {
             continue;
         }
 
+        let Ok(comm) = std::fs::read_to_string(entry.path().join("comm")) else {
+            continue;
+        };
+        let comm = comm.trim_end();
+        if comm.is_empty() || !"arch-update-manager".starts_with(comm) {
+            continue;
+        }
+
         let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
             continue;
         };
