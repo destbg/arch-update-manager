@@ -2,6 +2,8 @@
 
 A Linux Mint inspired GTK4-based update manager for Arch Linux.
 
+![Arch Update Manager](showcase.png)
+
 ## Features
 
 - View available package updates from pacman, AUR, and Flatpak

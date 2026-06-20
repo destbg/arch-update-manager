@@ -13,3 +13,6 @@ target/
 arch-update-manager-*.pkg.tar.zst
 pkg/
 arch-update-manager/
+
+## Other
+release.md
