@@ -221,6 +221,7 @@ fn create_main_content(
     if let Some(selection_model) = list_view.model().and_downcast::<SingleSelection>() {
         let title_label = info_panel.title_label.clone();
         let created_label = info_panel.created_label.clone();
+        let maintainer_label = info_panel.maintainer_label.clone();
         let info_container = info_panel.container.clone();
         let info_text = info_panel.info_text.clone();
         let url_button = info_panel.url_button.clone();
@@ -245,6 +246,19 @@ fn create_main_content(
                     }
                 } else {
                     created_label.set_visible(false);
+                }
+                if package_data.maintainer_changed() {
+                    let previous = package_data.previous_maintainer.as_deref().unwrap_or("unknown");
+                    let current = package_data.maintainer.as_deref().unwrap_or("unknown");
+                    maintainer_label.set_markup(&format!(
+                        "<span foreground=\"{}\">Maintainer changed from {} to {}</span>",
+                        if prefers_dark() { "#ffa348" } else { "#e66100" },
+                        glib::markup_escape_text(previous),
+                        glib::markup_escape_text(current),
+                    ));
+                    maintainer_label.set_visible(true);
+                } else {
+                    maintainer_label.set_visible(false);
                 }
                 info_text.set_text(package_data.description.as_str());
                 *current_url.borrow_mut() = package_data.url.clone();
@@ -275,6 +289,7 @@ fn create_main_content(
                 info_container.set_visible(false);
                 title_label.set_text("Information");
                 created_label.set_visible(false);
+                maintainer_label.set_visible(false);
                 *current_url.borrow_mut() = None;
                 url_button.set_visible(false);
 

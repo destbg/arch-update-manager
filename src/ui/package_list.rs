@@ -903,6 +903,12 @@ fn name_markup(data: &PackageUpdate) -> String {
     if is_recently_created(data.first_submitted) {
         markup.push_str(&badge("new", if dark { "#ff6b6b" } else { "#e01b24" }));
     }
+    if data.maintainer_changed() {
+        markup.push_str(&badge(
+            "maintainer changed",
+            if dark { "#ffa348" } else { "#e66100" },
+        ));
+    }
     if data.orphaned {
         markup.push_str(&badge("orphaned", if dark { "#f5c211" } else { "#e5a50a" }));
     }

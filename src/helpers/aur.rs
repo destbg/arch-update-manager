@@ -1,5 +1,6 @@
 use crate::{
     constants::AUR_NAME,
+    helpers::aur_maintainers::{read_maintainers, write_maintainers},
     helpers::elevated::get_original_user,
     helpers::network::http_get,
     helpers::settings::{get_effective_aur_helper, load_settings},
@@ -143,6 +144,9 @@ fn enrich_with_aur_info(updates: &mut [PackageUpdate]) {
         return;
     }
 
+    let mut known_maintainers = read_maintainers();
+    let mut maintainers_changed = false;
+
     for update in updates.iter_mut() {
         let Some(info) = info_map.get(&update.name) else {
             continue;
@@ -162,6 +166,24 @@ fn enrich_with_aur_info(updates: &mut [PackageUpdate]) {
         update.first_submitted = info.first_submitted;
         update.out_of_date = info.out_of_date;
         update.orphaned = info.maintainer.is_none();
+        update.maintainer = info.maintainer.clone();
+
+        if let Some(current) = &info.maintainer {
+            match known_maintainers.get(&update.name) {
+                Some(previous) if previous != current => {
+                    update.previous_maintainer = Some(previous.clone());
+                }
+                None => {
+                    known_maintainers.insert(update.name.clone(), current.clone());
+                    maintainers_changed = true;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if maintainers_changed {
+        write_maintainers(&known_maintainers);
     }
 }
 
@@ -303,6 +325,8 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             first_submitted: None,
             out_of_date: None,
             orphaned: false,
+            maintainer: None,
+            previous_maintainer: None,
             security_severity: None,
             security_issues: Vec::new(),
             flatpak_installation: None,
@@ -334,6 +358,8 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
             first_submitted: None,
             out_of_date: None,
             orphaned: false,
+            maintainer: None,
+            previous_maintainer: None,
             security_severity: None,
             security_issues: Vec::new(),
             flatpak_installation: None,
@@ -371,6 +397,8 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
             first_submitted: None,
             out_of_date: None,
             orphaned: false,
+            maintainer: None,
+            previous_maintainer: None,
             security_severity: None,
             security_issues: Vec::new(),
             flatpak_installation: None,

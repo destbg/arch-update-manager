@@ -14,9 +14,18 @@ pub struct PackageUpdate {
     pub first_submitted: Option<i64>,
     pub out_of_date: Option<i64>,
     pub orphaned: bool,
+    pub maintainer: Option<String>,
+    pub previous_maintainer: Option<String>,
     pub security_severity: Option<String>,
     pub security_issues: Vec<String>,
     pub flatpak_installation: Option<FlatpakInstallation>,
+}
+
+impl PackageUpdate {
+    pub fn maintainer_changed(&self) -> bool {
+        return self.previous_maintainer.is_some()
+            && self.previous_maintainer.as_deref() != self.maintainer.as_deref();
+    }
 }
 
 impl Default for PackageUpdate {
@@ -34,6 +43,8 @@ impl Default for PackageUpdate {
             first_submitted: None,
             out_of_date: None,
             orphaned: false,
+            maintainer: None,
+            previous_maintainer: None,
             security_severity: None,
             security_issues: Vec::new(),
             flatpak_installation: None,

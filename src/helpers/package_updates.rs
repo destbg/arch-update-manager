@@ -145,6 +145,8 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 first_submitted: None,
                 out_of_date: None,
                 orphaned: false,
+                maintainer: None,
+                previous_maintainer: None,
                 security_severity: None,
                 security_issues: Vec::new(),
                 flatpak_installation: None,
