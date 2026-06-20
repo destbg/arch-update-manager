@@ -530,13 +530,13 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                 };
 
                 let mut packages = packages;
-                if settings.enable_favorites {
-                    packages.sort_by(|a, b| {
-                        let a_fav = settings.is_favorite(&a.name);
-                        let b_fav = settings.is_favorite(&b.name);
-                        b_fav.cmp(&a_fav)
-                    });
-                }
+                packages.sort_by(|a, b| {
+                    let a_fav = settings.enable_favorites && settings.is_favorite(&a.name);
+                    let b_fav = settings.enable_favorites && settings.is_favorite(&b.name);
+                    let a_aur = a.repository == AUR_NAME;
+                    let b_aur = b.repository == AUR_NAME;
+                    return b_fav.cmp(&a_fav).then_with(|| b_aur.cmp(&a_aur));
+                });
 
                 for mut package in packages {
                     if unselected.contains(&package.name) {

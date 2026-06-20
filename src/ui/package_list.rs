@@ -1,3 +1,4 @@
+use crate::constants::AUR_NAME;
 use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::kick_tray;
 use crate::helpers::unselected_packages::save_unselected_packages;
@@ -471,7 +472,7 @@ fn create_repository_column(column_view: &ColumnView) {
 
         label.set_text(&data.repository);
 
-        if data.repository.contains("core") {
+        if data.repository == AUR_NAME {
             label.set_markup(&format!("<b>{}</b>", &data.repository));
         } else if data.repository.contains("extra") {
             label.add_css_class("dim-label");
