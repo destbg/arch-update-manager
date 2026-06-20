@@ -102,6 +102,8 @@ pub fn get_flatpak_updates() -> Result<Vec<PackageUpdate>> {
 
             let url = build_flatpak_url(&origin, &app_id, appstream_handler);
 
+            let new_permissions = get_new_permissions(&app_id, &origin, installation);
+
             let scope = match installation {
                 FlatpakInstallation::User => "user",
                 FlatpakInstallation::System => "system",
@@ -124,6 +126,7 @@ pub fn get_flatpak_updates() -> Result<Vec<PackageUpdate>> {
                 previous_maintainer: None,
                 security_severity: None,
                 security_issues: Vec::new(),
+                new_permissions,
                 flatpak_installation: Some(installation),
             });
         }
@@ -250,6 +253,65 @@ fn build_flatpak_action_command(
     }
 
     return Some(parts.join(" && "));
+}
+
+fn get_new_permissions(
+    app_id: &str,
+    origin: &str,
+    installation: FlatpakInstallation,
+) -> Vec<String> {
+    if origin.is_empty() {
+        return Vec::new();
+    }
+
+    let installed = flatpak_command(installation)
+        .args(["info", installation.flag(), "-m", app_id])
+        .output();
+    let installed = match installed {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        _ => return Vec::new(),
+    };
+
+    let remote = flatpak_command(installation)
+        .args(["remote-info", installation.flag(), "-m", origin, app_id])
+        .output();
+    let remote = match remote {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        _ => return Vec::new(),
+    };
+
+    let installed_perms = parse_context_permissions(&installed);
+    let remote_perms = parse_context_permissions(&remote);
+    return remote_perms.difference(&installed_perms).cloned().collect();
+}
+
+fn parse_context_permissions(metadata: &str) -> std::collections::BTreeSet<String> {
+    let mut perms = std::collections::BTreeSet::new();
+    let mut in_context = false;
+
+    for line in metadata.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_context = line == "[Context]";
+            continue;
+        }
+        if !in_context || line.is_empty() {
+            continue;
+        }
+        let Some((category, values)) = line.split_once('=') else {
+            continue;
+        };
+        let category = category.trim();
+        for value in values.split(';') {
+            let value = value.trim();
+            if value.is_empty() {
+                continue;
+            }
+            perms.insert(format!("{}: {}", category, value));
+        }
+    }
+
+    return perms;
 }
 
 fn build_flatpak_url(origin: &str, app_id: &str, appstream_handler: bool) -> Option<String> {

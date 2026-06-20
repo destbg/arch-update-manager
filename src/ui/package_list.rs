@@ -909,6 +909,12 @@ fn name_markup(data: &PackageUpdate) -> String {
             if dark { "#ffa348" } else { "#e66100" },
         ));
     }
+    if !data.new_permissions.is_empty() {
+        markup.push_str(&badge(
+            "new permissions",
+            if dark { "#ffa348" } else { "#e66100" },
+        ));
+    }
     if data.orphaned {
         markup.push_str(&badge("orphaned", if dark { "#f5c211" } else { "#e5a50a" }));
     }

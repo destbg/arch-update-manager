@@ -222,6 +222,7 @@ fn create_main_content(
         let title_label = info_panel.title_label.clone();
         let created_label = info_panel.created_label.clone();
         let maintainer_label = info_panel.maintainer_label.clone();
+        let permissions_label = info_panel.permissions_label.clone();
         let info_container = info_panel.container.clone();
         let info_text = info_panel.info_text.clone();
         let url_button = info_panel.url_button.clone();
@@ -260,6 +261,17 @@ fn create_main_content(
                 } else {
                     maintainer_label.set_visible(false);
                 }
+                if package_data.new_permissions.is_empty() {
+                    permissions_label.set_visible(false);
+                } else {
+                    let list = package_data.new_permissions.join(", ");
+                    permissions_label.set_markup(&format!(
+                        "<span foreground=\"{}\">Asks for new permissions: {}</span>",
+                        if prefers_dark() { "#ffa348" } else { "#e66100" },
+                        glib::markup_escape_text(&list),
+                    ));
+                    permissions_label.set_visible(true);
+                }
                 info_text.set_text(package_data.description.as_str());
                 *current_url.borrow_mut() = package_data.url.clone();
                 url_button.set_visible(package_data.url.is_some());
@@ -290,6 +302,7 @@ fn create_main_content(
                 title_label.set_text("Information");
                 created_label.set_visible(false);
                 maintainer_label.set_visible(false);
+                permissions_label.set_visible(false);
                 *current_url.borrow_mut() = None;
                 url_button.set_visible(false);
 

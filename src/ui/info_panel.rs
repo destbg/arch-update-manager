@@ -42,6 +42,13 @@ pub fn create_info_panel() -> InfoPanel {
     maintainer_label.set_visible(false);
     title_box.append(&maintainer_label);
 
+    let permissions_label = Label::new(None);
+    permissions_label.set_xalign(0.0);
+    permissions_label.set_wrap(true);
+    permissions_label.add_css_class("caption");
+    permissions_label.set_visible(false);
+    title_box.append(&permissions_label);
+
     header.append(&title_box);
 
     let ignore_button = ToggleButton::new();
@@ -138,6 +145,7 @@ pub fn create_info_panel() -> InfoPanel {
         title_label,
         created_label,
         maintainer_label,
+        permissions_label,
         info_text,
         url_button,
         release_notes_button,

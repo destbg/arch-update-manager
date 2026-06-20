@@ -329,6 +329,7 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             previous_maintainer: None,
             security_severity: None,
             security_issues: Vec::new(),
+            new_permissions: Vec::new(),
             flatpak_installation: None,
         })
         .collect());
@@ -362,6 +363,7 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
             previous_maintainer: None,
             security_severity: None,
             security_issues: Vec::new(),
+            new_permissions: Vec::new(),
             flatpak_installation: None,
         }));
     }
@@ -401,6 +403,7 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
             previous_maintainer: None,
             security_severity: None,
             security_issues: Vec::new(),
+            new_permissions: Vec::new(),
             flatpak_installation: None,
         }));
     }

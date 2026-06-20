@@ -149,6 +149,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 previous_maintainer: None,
                 security_severity: None,
                 security_issues: Vec::new(),
+                new_permissions: Vec::new(),
                 flatpak_installation: None,
             });
         }
