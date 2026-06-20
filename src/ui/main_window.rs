@@ -239,12 +239,23 @@ fn create_main_content(
                 info_container.set_visible(true);
                 title_label.set_markup(&info_title_markup(&package_data));
                 if package_data.repository == AUR_NAME {
+                    let mut parts: Vec<String> = Vec::new();
                     if let Some(ts) = package_data.first_submitted {
-                        created_label.set_text(&format!("Created {}", format_age(ts)));
-                        created_label.set_visible(true);
-                    } else {
-                        created_label.set_visible(false);
+                        parts.push(format!("Created {}", format_age(ts)));
                     }
+                    if let Some(votes) = package_data.num_votes {
+                        parts.push(format!("{} votes", votes));
+                    }
+                    if let Some(popularity) = package_data.popularity {
+                        parts.push(format!("popularity {:.2}", popularity));
+                    }
+                    let aur_url = format!(
+                        "https://aur.archlinux.org/packages/{}",
+                        glib::markup_escape_text(&package_data.name)
+                    );
+                    parts.push(format!("<a href=\"{}\">comments</a>", aur_url));
+                    created_label.set_markup(&parts.join(" \u{00B7} "));
+                    created_label.set_visible(true);
                 } else {
                     created_label.set_visible(false);
                 }

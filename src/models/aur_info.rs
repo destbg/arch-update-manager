@@ -6,4 +6,6 @@ pub struct AurInfo {
     pub first_submitted: Option<i64>,
     pub out_of_date: Option<i64>,
     pub maintainer: Option<String>,
+    pub num_votes: Option<i64>,
+    pub popularity: Option<f64>,
 }

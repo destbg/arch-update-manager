@@ -30,9 +30,14 @@ pub fn create_info_panel() -> InfoPanel {
 
     let created_label = Label::new(None);
     created_label.set_xalign(0.0);
+    created_label.set_wrap(true);
     created_label.add_css_class("dim-label");
     created_label.add_css_class("caption");
     created_label.set_visible(false);
+    created_label.connect_activate_link(|_, uri| {
+        open_url_as_user(uri);
+        return glib::Propagation::Stop;
+    });
     title_box.append(&created_label);
 
     let maintainer_label = Label::new(None);

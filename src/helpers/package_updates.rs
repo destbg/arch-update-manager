@@ -147,6 +147,8 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 orphaned: false,
                 maintainer: None,
                 previous_maintainer: None,
+                num_votes: None,
+                popularity: None,
                 security_severity: None,
                 security_issues: Vec::new(),
                 new_permissions: Vec::new(),

@@ -167,6 +167,8 @@ fn enrich_with_aur_info(updates: &mut [PackageUpdate]) {
         update.out_of_date = info.out_of_date;
         update.orphaned = info.maintainer.is_none();
         update.maintainer = info.maintainer.clone();
+        update.num_votes = info.num_votes;
+        update.popularity = info.popularity;
 
         if let Some(current) = &info.maintainer {
             match known_maintainers.get(&update.name) {
@@ -223,6 +225,8 @@ fn fetch_aur_info(names: &[&str]) -> HashMap<String, AurInfo> {
                 first_submitted: entry.get("FirstSubmitted").and_then(|v| v.as_i64()),
                 out_of_date: entry.get("OutOfDate").and_then(|v| v.as_i64()),
                 maintainer: str_field("Maintainer"),
+                num_votes: entry.get("NumVotes").and_then(|v| v.as_i64()),
+                popularity: entry.get("Popularity").and_then(|v| v.as_f64()),
             },
         );
     }
@@ -327,6 +331,8 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             orphaned: false,
             maintainer: None,
             previous_maintainer: None,
+            num_votes: None,
+            popularity: None,
             security_severity: None,
             security_issues: Vec::new(),
             new_permissions: Vec::new(),
@@ -361,6 +367,8 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
             orphaned: false,
             maintainer: None,
             previous_maintainer: None,
+            num_votes: None,
+            popularity: None,
             security_severity: None,
             security_issues: Vec::new(),
             new_permissions: Vec::new(),
@@ -401,6 +409,8 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
             orphaned: false,
             maintainer: None,
             previous_maintainer: None,
+            num_votes: None,
+            popularity: None,
             security_severity: None,
             security_issues: Vec::new(),
             new_permissions: Vec::new(),
