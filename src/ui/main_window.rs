@@ -487,6 +487,23 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                 if !blacklisted.is_empty() {
                     packages.retain(|p| !blacklisted.contains(&p.name));
                 }
+
+                let age_settings = load_settings();
+                if age_settings.min_update_age_days > 0 {
+                    let aur_only = age_settings.min_update_age_aur_only;
+                    let cutoff = chrono::Utc::now().timestamp()
+                        - (age_settings.min_update_age_days as i64) * 86_400;
+                    packages.retain(|p| {
+                        if aur_only && p.repository != AUR_NAME {
+                            return true;
+                        }
+                        match p.build_date {
+                            Some(ts) => ts <= cutoff,
+                            None => true,
+                        }
+                    });
+                }
+
                 publish_tray_state(&packages);
                 if packages.is_empty() {
                     stack.set_visible_child_name("no-updates");

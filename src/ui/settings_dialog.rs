@@ -79,6 +79,8 @@ pub fn show_settings_dialog(
     let (aur_enable_check, aur_combo, aur_devel_check) =
         create_aur_group(settings, &packages_container);
     let flatpak_enable_check = create_flatpak_group(settings, &packages_container);
+    let (min_update_age_spin, min_update_age_aur_only_check) =
+        create_update_age_group(settings, &packages_container);
     stack.add_titled(&wrap_tab(&packages_container), Some("packages"), "Packages");
 
     let pacman_container = build_tab_container();
@@ -137,6 +139,8 @@ pub fn show_settings_dialog(
         let skip_battery_check = skip_battery_check.clone();
         let show_desc_check = show_desc_check.clone();
         let show_updated_check = show_updated_check.clone();
+        let min_update_age_spin = min_update_age_spin.clone();
+        let min_update_age_aur_only_check = min_update_age_aur_only_check.clone();
         let log_retention_spin = log_retention_spin.clone();
 
         Rc::new(move || {
@@ -211,6 +215,8 @@ pub fn show_settings_dialog(
                 system_tray_check.is_active() && skip_battery_check.is_active();
             new_settings.show_package_descriptions = show_desc_check.is_active();
             new_settings.show_updated_date = show_updated_check.is_active();
+            new_settings.min_update_age_days = min_update_age_spin.value() as u32;
+            new_settings.min_update_age_aur_only = min_update_age_aur_only_check.is_active();
             new_settings.log_retention_days = log_retention_spin.value() as u32;
 
             if let Err(e) = save_settings(&new_settings) {
@@ -442,6 +448,18 @@ pub fn show_settings_dialog(
         }
     });
 
+    let save_all_clone = save_all.clone();
+    let aur_only_check_weak = min_update_age_aur_only_check.clone();
+    min_update_age_spin.connect_value_changed(move |spin| {
+        aur_only_check_weak.set_sensitive(spin.value() > 0.0);
+        save_all_clone();
+    });
+
+    let save_all_clone = save_all.clone();
+    min_update_age_aur_only_check.connect_toggled(move |_| {
+        save_all_clone();
+    });
+
     dialog.present();
 }
 
@@ -517,6 +535,46 @@ fn create_show_descriptions_group(
     main_container.append(&section);
 
     return (check, updated_check);
+}
+
+fn create_update_age_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+) -> (gtk4::SpinButton, gtk4::CheckButton) {
+    let section = create_preference_group(
+        "Update Delay",
+        "Wait a number of days before a new update shows up, so it can settle before you install it.",
+    );
+
+    let age_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    age_box.set_hexpand(true);
+
+    let age_label = gtk4::Label::new(Some("Hide updates newer than (days)"));
+    age_label.set_halign(gtk4::Align::Start);
+    age_label.set_hexpand(true);
+    age_label.set_tooltip_text(Some(
+        "Set to 0 to show all updates. Packages with no known date are always shown.",
+    ));
+    age_box.append(&age_label);
+
+    let age_spin = gtk4::SpinButton::with_range(0.0, 365.0, 1.0);
+    age_spin.set_value(settings.min_update_age_days as f64);
+    age_spin.add_css_class("settings-spin");
+    age_spin.set_halign(gtk4::Align::End);
+    age_box.append(&age_spin);
+
+    section.append(&age_box);
+
+    let aur_only_check = gtk4::CheckButton::with_label("Apply only to AUR packages");
+    aur_only_check.add_css_class("settings-check");
+    aur_only_check.set_active(settings.min_update_age_aur_only);
+    aur_only_check.set_sensitive(settings.min_update_age_days > 0);
+    aur_only_check.set_margin_top(8);
+    section.append(&aur_only_check);
+
+    main_container.append(&section);
+
+    return (age_spin, aur_only_check);
 }
 
 fn create_system_tray_group(

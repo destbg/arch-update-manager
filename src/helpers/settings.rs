@@ -42,6 +42,8 @@ fn default_settings() -> AppSettings {
         show_update_notifications: false,
         show_package_descriptions: true,
         show_updated_date: true,
+        min_update_age_days: 0,
+        min_update_age_aur_only: false,
         log_retention_days: 7,
         check_arch_news: true,
     };

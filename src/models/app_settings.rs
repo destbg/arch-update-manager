@@ -74,6 +74,10 @@ pub struct AppSettings {
     pub show_package_descriptions: bool,
     #[serde(default = "default_show_updated_date")]
     pub show_updated_date: bool,
+    #[serde(default)]
+    pub min_update_age_days: u32,
+    #[serde(default)]
+    pub min_update_age_aur_only: bool,
     #[serde(default = "default_log_retention_days")]
     pub log_retention_days: u32,
     #[serde(default = "default_check_arch_news")]
