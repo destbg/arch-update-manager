@@ -159,6 +159,7 @@ fn enrich_with_aur_info(updates: &mut [PackageUpdate]) {
             }
         }
         update.build_date = info.last_modified;
+        update.first_submitted = info.first_submitted;
         update.out_of_date = info.out_of_date;
         update.orphaned = info.maintainer.is_none();
     }
@@ -197,6 +198,7 @@ fn fetch_aur_info(names: &[&str]) -> HashMap<String, AurInfo> {
                 description: str_field("Description"),
                 url: str_field("URL"),
                 last_modified: entry.get("LastModified").and_then(|v| v.as_i64()),
+                first_submitted: entry.get("FirstSubmitted").and_then(|v| v.as_i64()),
                 out_of_date: entry.get("OutOfDate").and_then(|v| v.as_i64()),
                 maintainer: str_field("Maintainer"),
             },
@@ -298,6 +300,7 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             new_version: e.new_version,
             name: e.name,
             build_date: None,
+            first_submitted: None,
             out_of_date: None,
             orphaned: false,
             security_severity: None,
@@ -328,6 +331,7 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
                 package_name
             )),
             build_date: None,
+            first_submitted: None,
             out_of_date: None,
             orphaned: false,
             security_severity: None,
@@ -364,6 +368,7 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
                 package_name
             )),
             build_date: None,
+            first_submitted: None,
             out_of_date: None,
             orphaned: false,
             security_severity: None,

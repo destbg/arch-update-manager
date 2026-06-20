@@ -28,6 +28,13 @@ pub fn create_info_panel() -> InfoPanel {
     title_label.add_css_class("heading");
     title_box.append(&title_label);
 
+    let created_label = Label::new(None);
+    created_label.set_xalign(0.0);
+    created_label.add_css_class("dim-label");
+    created_label.add_css_class("caption");
+    created_label.set_visible(false);
+    title_box.append(&created_label);
+
     header.append(&title_box);
 
     let ignore_button = ToggleButton::new();
@@ -122,6 +129,7 @@ pub fn create_info_panel() -> InfoPanel {
     return InfoPanel {
         container: info_box,
         title_label,
+        created_label,
         info_text,
         url_button,
         release_notes_button,

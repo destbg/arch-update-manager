@@ -117,6 +117,7 @@ pub fn get_flatpak_updates() -> Result<Vec<PackageUpdate>> {
                 size: download_size,
                 url,
                 build_date: None,
+                first_submitted: None,
                 out_of_date: None,
                 orphaned: false,
                 security_severity: None,

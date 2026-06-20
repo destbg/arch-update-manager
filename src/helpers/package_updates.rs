@@ -142,6 +142,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 size,
                 url,
                 build_date,
+                first_submitted: None,
                 out_of_date: None,
                 orphaned: false,
                 security_severity: None,

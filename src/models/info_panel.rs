@@ -6,6 +6,7 @@ use std::rc::Rc;
 pub struct InfoPanel {
     pub container: GtkBox,
     pub title_label: Label,
+    pub created_label: Label,
     pub info_text: Label,
     pub url_button: Button,
     pub release_notes_button: Button,

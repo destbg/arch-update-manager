@@ -221,6 +221,39 @@ pub(crate) fn format_build_date(timestamp: i64) -> String {
     return format!("{} day{} ago", days, plural(days));
 }
 
+pub(crate) fn is_recently_created(first_submitted: Option<i64>) -> bool {
+    const WEEK: i64 = 7 * 24 * 3600;
+    let Some(ts) = first_submitted else {
+        return false;
+    };
+    let diff = chrono::Utc::now().timestamp() - ts;
+    return diff >= 0 && diff < WEEK;
+}
+
+pub(crate) fn format_age(timestamp: i64) -> String {
+    const DAY: i64 = 24 * 3600;
+    const MONTH: i64 = 30 * DAY;
+    const YEAR: i64 = 365 * DAY;
+
+    let diff = chrono::Utc::now().timestamp() - timestamp;
+    if diff < 0 {
+        return "just now".to_string();
+    }
+    if diff >= YEAR {
+        let years = diff / YEAR;
+        return format!("{} year{} ago", years, plural(years));
+    }
+    if diff >= MONTH {
+        let months = diff / MONTH;
+        return format!("{} month{} ago", months, plural(months));
+    }
+    let days = diff / DAY;
+    if days < 1 {
+        return "today".to_string();
+    }
+    return format!("{} day{} ago", days, plural(days));
+}
+
 fn apply_favorite_state(weak: &WeakRef<ToggleButton>, is_favorite: bool) {
     let Some(button) = weak.upgrade() else {
         return;
@@ -867,6 +900,9 @@ fn name_markup(data: &PackageUpdate) -> String {
     let dark = prefers_dark();
     let mut markup = glib::markup_escape_text(&data.name).to_string();
 
+    if is_recently_created(data.first_submitted) {
+        markup.push_str(&badge("new", if dark { "#ff6b6b" } else { "#e01b24" }));
+    }
     if data.orphaned {
         markup.push_str(&badge("orphaned", if dark { "#f5c211" } else { "#e5a50a" }));
     }

@@ -24,7 +24,7 @@ use crate::ui::loading::create_loading_page;
 use crate::ui::news_dialog::show_news_dialog;
 use crate::ui::no_updates::create_no_updates_page;
 use crate::ui::package_list::{
-    create_package_list, format_build_date, prefers_dark, update_statusbar,
+    create_package_list, format_age, format_build_date, prefers_dark, update_statusbar,
 };
 use crate::ui::post_update_page::create_post_update_page;
 use crate::ui::settings_dialog::show_settings_dialog;
@@ -220,6 +220,7 @@ fn create_main_content(
 
     if let Some(selection_model) = list_view.model().and_downcast::<SingleSelection>() {
         let title_label = info_panel.title_label.clone();
+        let created_label = info_panel.created_label.clone();
         let info_container = info_panel.container.clone();
         let info_text = info_panel.info_text.clone();
         let url_button = info_panel.url_button.clone();
@@ -235,6 +236,16 @@ fn create_main_content(
                 let package_data = package_obj.data();
                 info_container.set_visible(true);
                 title_label.set_markup(&info_title_markup(&package_data));
+                if package_data.repository == AUR_NAME {
+                    if let Some(ts) = package_data.first_submitted {
+                        created_label.set_text(&format!("Created {}", format_age(ts)));
+                        created_label.set_visible(true);
+                    } else {
+                        created_label.set_visible(false);
+                    }
+                } else {
+                    created_label.set_visible(false);
+                }
                 info_text.set_text(package_data.description.as_str());
                 *current_url.borrow_mut() = package_data.url.clone();
                 url_button.set_visible(package_data.url.is_some());
@@ -263,6 +274,7 @@ fn create_main_content(
             } else {
                 info_container.set_visible(false);
                 title_label.set_text("Information");
+                created_label.set_visible(false);
                 *current_url.borrow_mut() = None;
                 url_button.set_visible(false);
 
