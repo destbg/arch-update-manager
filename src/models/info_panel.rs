@@ -9,6 +9,7 @@ pub struct InfoPanel {
     pub created_label: Label,
     pub maintainer_label: Label,
     pub permissions_label: Label,
+    pub deps_label: Label,
     pub info_text: Label,
     pub url_button: Button,
     pub release_notes_button: Button,

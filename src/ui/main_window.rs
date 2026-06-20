@@ -223,6 +223,7 @@ fn create_main_content(
         let created_label = info_panel.created_label.clone();
         let maintainer_label = info_panel.maintainer_label.clone();
         let permissions_label = info_panel.permissions_label.clone();
+        let deps_label = info_panel.deps_label.clone();
         let info_container = info_panel.container.clone();
         let info_text = info_panel.info_text.clone();
         let url_button = info_panel.url_button.clone();
@@ -283,6 +284,15 @@ fn create_main_content(
                     ));
                     permissions_label.set_visible(true);
                 }
+                if package_data.extra_dependencies.is_empty() {
+                    deps_label.set_visible(false);
+                } else {
+                    deps_label.set_text(&format!(
+                        "Will also install: {}",
+                        package_data.extra_dependencies.join(", ")
+                    ));
+                    deps_label.set_visible(true);
+                }
                 info_text.set_text(package_data.description.as_str());
                 *current_url.borrow_mut() = package_data.url.clone();
                 url_button.set_visible(package_data.url.is_some());
@@ -314,6 +324,7 @@ fn create_main_content(
                 created_label.set_visible(false);
                 maintainer_label.set_visible(false);
                 permissions_label.set_visible(false);
+                deps_label.set_visible(false);
                 *current_url.borrow_mut() = None;
                 url_button.set_visible(false);
 

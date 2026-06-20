@@ -152,8 +152,16 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 security_severity: None,
                 security_issues: Vec::new(),
                 new_permissions: Vec::new(),
+                extra_dependencies: Vec::new(),
                 flatpak_installation: None,
             });
+        }
+
+        let new_deps_map = compute_new_dependencies(&package_info_map);
+        for update in &mut updates {
+            if let Some(deps) = new_deps_map.get(&update.name) {
+                update.extra_dependencies = deps.clone();
+            }
         }
     }
 
@@ -222,6 +230,7 @@ fn get_batch_repository_info(
     let mut current_description = "No description available".to_string();
     let mut current_repository = "Unknown".to_string();
     let mut current_url: Option<String> = None;
+    let mut current_depends: Vec<String> = Vec::new();
 
     for line in info.lines() {
         let line = line.trim();
@@ -235,6 +244,7 @@ fn get_batch_repository_info(
                 current_package = Some(package_name);
                 current_description = "No description available".to_string();
                 current_url = None;
+                current_depends = Vec::new();
             } else {
                 current_package = None;
             }
@@ -247,6 +257,13 @@ fn get_batch_repository_info(
                 let value = extract_field_value(line);
                 if !value.is_empty() && value != "Unknown" && value != "None" {
                     current_url = Some(value);
+                }
+            }
+        } else if line.starts_with("Depends On") {
+            if current_package.is_some() {
+                let value = extract_field_value(line);
+                if value != "None" {
+                    current_depends = value.split_whitespace().map(|s| s.to_string()).collect();
                 }
             }
         } else if line.starts_with("Installed Size") {
@@ -263,6 +280,7 @@ fn get_batch_repository_info(
                         description: current_description.clone(),
                         repository: current_repository.clone(),
                         url: current_url.clone(),
+                        depends: std::mem::take(&mut current_depends),
                     },
                 );
                 current_url = None;
@@ -278,12 +296,66 @@ fn get_batch_repository_info(
                     description: current_description,
                     repository: current_repository,
                     url: current_url,
+                    depends: current_depends,
                 },
             );
         }
     }
 
     return Ok((package_info_map, repo_sizes_map));
+}
+
+fn compute_new_dependencies(
+    info_map: &HashMap<String, PackageInfo>,
+) -> HashMap<String, Vec<String>> {
+    use std::collections::HashSet;
+
+    let mut all_names: HashSet<String> = HashSet::new();
+    for info in info_map.values() {
+        for dep in &info.depends {
+            all_names.insert(strip_dep_version(dep).to_string());
+        }
+    }
+    if all_names.is_empty() {
+        return HashMap::new();
+    }
+
+    let names: Vec<&str> = all_names.iter().map(|s| s.as_str()).collect();
+    let unsatisfied = deptest_unsatisfied(&names);
+    if unsatisfied.is_empty() {
+        return HashMap::new();
+    }
+
+    let mut result = HashMap::new();
+    for (name, info) in info_map {
+        let mut new_deps: Vec<String> = info
+            .depends
+            .iter()
+            .map(|d| strip_dep_version(d).to_string())
+            .filter(|n| unsatisfied.contains(n))
+            .collect();
+        new_deps.sort();
+        new_deps.dedup();
+        if !new_deps.is_empty() {
+            result.insert(name.clone(), new_deps);
+        }
+    }
+    return result;
+}
+
+fn deptest_unsatisfied(names: &[&str]) -> std::collections::HashSet<String> {
+    let Ok(output) = Command::new("pacman").arg("-T").args(names).output() else {
+        return std::collections::HashSet::new();
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    return text.split_whitespace().map(|s| s.to_string()).collect();
+}
+
+fn strip_dep_version(dep: &str) -> &str {
+    let end = dep
+        .find(|c| c == '<' || c == '>' || c == '=')
+        .unwrap_or(dep.len());
+    return &dep[..end];
 }
 
 fn get_build_dates(package_names: &[&str]) -> HashMap<String, i64> {
