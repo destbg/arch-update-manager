@@ -22,6 +22,7 @@ pub struct PackageUpdate {
     pub security_issues: Vec<String>,
     pub new_permissions: Vec<String>,
     pub extra_dependencies: Vec<String>,
+    pub pkgbuild_needs_review: bool,
     pub flatpak_installation: Option<FlatpakInstallation>,
 }
 
@@ -55,6 +56,7 @@ impl Default for PackageUpdate {
             security_issues: Vec::new(),
             new_permissions: Vec::new(),
             extra_dependencies: Vec::new(),
+            pkgbuild_needs_review: false,
             flatpak_installation: None,
         }
     }

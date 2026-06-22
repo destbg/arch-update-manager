@@ -1,6 +1,7 @@
 use crate::{
     constants::AUR_NAME,
     helpers::aur_maintainers::{read_maintainers, write_maintainers},
+    helpers::aur_pkgbuild::pkgbuild_needs_review,
     helpers::elevated::get_original_user,
     helpers::network::http_get,
     helpers::settings::{get_effective_aur_helper, load_settings},
@@ -117,6 +118,9 @@ pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut updates = parse_aur_updates(&stdout, &helper)?;
     enrich_with_aur_info(&mut updates);
+    for update in &mut updates {
+        update.pkgbuild_needs_review = pkgbuild_needs_review(&update.name);
+    }
     return Ok(updates);
 }
 
@@ -337,6 +341,7 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             security_issues: Vec::new(),
             new_permissions: Vec::new(),
             extra_dependencies: Vec::new(),
+            pkgbuild_needs_review: false,
             flatpak_installation: None,
         })
         .collect());
@@ -374,6 +379,7 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
             security_issues: Vec::new(),
             new_permissions: Vec::new(),
             extra_dependencies: Vec::new(),
+            pkgbuild_needs_review: false,
             flatpak_installation: None,
         }));
     }
@@ -417,6 +423,7 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
             security_issues: Vec::new(),
             new_permissions: Vec::new(),
             extra_dependencies: Vec::new(),
+            pkgbuild_needs_review: false,
             flatpak_installation: None,
         }));
     }

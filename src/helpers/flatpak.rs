@@ -130,6 +130,7 @@ pub fn get_flatpak_updates() -> Result<Vec<PackageUpdate>> {
                 security_issues: Vec::new(),
                 new_permissions,
                 extra_dependencies: Vec::new(),
+                pkgbuild_needs_review: false,
                 flatpak_installation: Some(installation),
             });
         }
