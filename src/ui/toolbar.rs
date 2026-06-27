@@ -17,6 +17,7 @@ use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{
     create_progress_dialog, show_confirm_dialog, show_error_dialog, show_partial_upgrade_dialog,
 };
+use crate::ui::history_dialog::show_history_dialog;
 use crate::ui::main_window::{find_favorites_column, find_package_store, load_packages};
 use crate::ui::package_list::{save_unselected_from_store, update_statusbar};
 use crate::ui::settings_dialog::show_settings_dialog;
@@ -215,6 +216,24 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
             }
         ));
         toolbar.append(&vulnerabilities_btn);
+
+        let history_btn = Button::new();
+        history_btn.set_child(Some(&create_button_content(
+            "document-open-recent-symbolic",
+            "History",
+        )));
+        history_btn.set_tooltip_text(Some("Update history"));
+        history_btn.connect_clicked(clone!(
+            #[weak]
+            toolbar,
+            move |_| {
+                log_info!("toolbar: History clicked");
+                if let Some(window) = toolbar.root().and_downcast::<ApplicationWindow>() {
+                    show_history_dialog(&window);
+                }
+            }
+        ));
+        toolbar.append(&history_btn);
 
         let news_btn = Button::new();
         news_btn.set_child(Some(&create_button_content(

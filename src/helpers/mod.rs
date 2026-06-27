@@ -10,6 +10,7 @@ pub mod disk_space;
 pub mod elevated;
 pub mod flatpak;
 pub mod get_navigation_stack;
+pub mod history;
 pub mod installed_packages;
 pub mod logger;
 pub mod network;

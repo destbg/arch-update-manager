@@ -5,6 +5,7 @@ pub mod dialogs;
 pub mod downgrade_dialog;
 pub mod error_page;
 pub mod favorites_dialog;
+pub mod history_dialog;
 pub mod info_panel;
 pub mod loading;
 pub mod main_window;

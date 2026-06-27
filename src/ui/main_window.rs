@@ -19,6 +19,7 @@ use crate::models::post_update_page::PostUpdatePage;
 use crate::models::update_error::UpdateError;
 use crate::ui::dialogs::{show_confirm_dialog, show_error_dialog};
 use crate::ui::error_page::{create_error_page, update_error_page_message};
+use crate::ui::history_dialog::show_history_dialog;
 use crate::ui::info_panel::{create_info_panel, update_ignore_button_tooltip};
 use crate::ui::loading::create_loading_page;
 use crate::ui::news_dialog::show_news_dialog;
@@ -93,6 +94,17 @@ pub fn build_ui(app: &Application) {
         });
 
         header_bar.pack_end(&vulnerabilities_button);
+
+        let history_button = Button::from_icon_name("document-open-recent-symbolic");
+        history_button.set_tooltip_text(Some("Update history"));
+
+        let window_for_history = window.clone();
+        history_button.connect_clicked(move |_| {
+            log_info!("header: History clicked");
+            show_history_dialog(&window_for_history);
+        });
+
+        header_bar.pack_end(&history_button);
     }
 
     window.set_titlebar(Some(&header_bar));
@@ -262,7 +274,10 @@ fn create_main_content(
                     created_label.set_visible(false);
                 }
                 if package_data.maintainer_changed() {
-                    let previous = package_data.previous_maintainer.as_deref().unwrap_or("unknown");
+                    let previous = package_data
+                        .previous_maintainer
+                        .as_deref()
+                        .unwrap_or("unknown");
                     let current = package_data.maintainer.as_deref().unwrap_or("unknown");
                     maintainer_label.set_markup(&format!(
                         "<span foreground=\"{}\">Maintainer changed from {} to {}</span>",
