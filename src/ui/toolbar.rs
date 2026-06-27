@@ -1,5 +1,6 @@
 use crate::constants::{AUR_NAME, FLATPAK_NAME, TIMESHIFT_COMMENT};
 use crate::helpers::aur::install_aur_packages;
+use crate::helpers::disk_space::available_bytes;
 use crate::helpers::elevated::open_url_as_user;
 use crate::helpers::flatpak::build_flatpak_update_command;
 use crate::helpers::get_navigation_stack::get_navigation_stack;
@@ -33,6 +34,8 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+const DISK_SAFETY_MARGIN: i64 = 512 * 1024 * 1024;
 
 pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
     let toolbar_container = GtkBox::new(Orientation::Vertical, 6);
@@ -127,13 +130,17 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                         snapshot_note.push_str("\nA Snapper snapshot will be created.");
                     }
 
+                    let disk_prefix = disk_space_warning(&store)
+                        .map(|w| format!("{}\n\n", w))
+                        .unwrap_or_default();
+
                     let (selected_core, total_core) = count_core_updates(&store);
                     let partial = selected_core > 0 && selected_core < total_core;
 
                     if partial {
                         let message = format!(
-                            "You selected {} of {} core package updates.\n\nInstalling only some of them is a partial upgrade.\nThis can sometimes cause errors or leave a package broken.{}",
-                            selected_core, total_core, snapshot_note
+                            "{}You selected {} of {} core package updates.\n\nInstalling only some of them is a partial upgrade.\nThis can sometimes cause errors or leave a package broken.{}",
+                            disk_prefix, selected_core, total_core, snapshot_note
                         );
                         let dialog = show_partial_upgrade_dialog(&window, &message);
 
@@ -157,7 +164,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                             dialog.close();
                         });
                     } else {
-                        let message = format!("Install selected updates?{}", snapshot_note);
+                        let message = format!("{}Install selected updates?{}", disk_prefix, snapshot_note);
                         let confirm_dialog = show_confirm_dialog(
                             &window,
                             "Confirm Installation",
@@ -339,6 +346,39 @@ fn select_all_packages(store: &ListStore, statusbar: &Statusbar) {
 
 fn is_core_repo(repository: &str) -> bool {
     return repository.to_ascii_lowercase().contains("core");
+}
+
+fn disk_space_warning(store: &ListStore) -> Option<String> {
+    let mut net: i64 = 0;
+    for i in 0..store.n_items() {
+        if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
+            let data = item.data();
+            if data.selected {
+                net += data.size;
+            }
+        }
+    }
+
+    let needed = net.max(0);
+    let available = available_bytes("/")? as i64;
+
+    if available >= needed + DISK_SAFETY_MARGIN {
+        return None;
+    }
+
+    let free = glib::format_size(available as u64);
+    if needed > 0 {
+        return Some(format!(
+            "Low disk space. Only {} is free on the system partition, and these updates need about {} more. The install may run out of space and fail.",
+            free,
+            glib::format_size(needed as u64)
+        ));
+    }
+
+    return Some(format!(
+        "Low disk space. Only {} is free on the system partition. The install may run out of space and fail.",
+        free
+    ));
 }
 
 fn count_core_updates(store: &ListStore) -> (usize, usize) {
