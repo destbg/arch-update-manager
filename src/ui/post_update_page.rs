@@ -8,13 +8,11 @@ use shlex::try_quote;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::helpers::aur::rebuild_aur_packages;
 use crate::helpers::elevated::spawn_as_user_or_root;
 use crate::helpers::flatpak::{build_flatpak_uninstall_command, get_unused_flatpak_runtimes};
 use crate::helpers::post_update::{
-    clean_cache, get_aur_rebuild_packages, get_cache_candidates, get_orphan_packages,
-    get_pacnew_files, get_services_needing_restart, is_kernel_reboot_pending, is_meld_available,
-    restart_service,
+    clean_cache, get_cache_candidates, get_orphan_packages, get_pacnew_files,
+    get_services_needing_restart, is_kernel_reboot_pending, is_meld_available, restart_service,
 };
 use crate::helpers::repo_switches::detect_repo_switches;
 use crate::helpers::settings::load_settings;
@@ -137,8 +135,7 @@ pub fn refresh_all_clear(page: &PostUpdatePage) {
         || visibility.pacnew
         || visibility.services
         || visibility.flatpak_unused
-        || visibility.resolutions
-        || visibility.aur_rebuild;
+        || visibility.resolutions;
     page.all_clear_box.set_visible(!any_visible);
 }
 
@@ -254,97 +251,6 @@ pub fn set_orphans_section(
 
     page.sections_box.append(&section.wrapper);
     page.section_visibility.borrow_mut().orphans = true;
-    refresh_all_clear(page);
-}
-
-pub fn set_aur_rebuild_section(
-    page: &PostUpdatePage,
-    packages: Vec<String>,
-    window: &ApplicationWindow,
-) {
-    if packages.is_empty() {
-        return;
-    }
-
-    let title = format!("Rebuild needed ({})", packages.len());
-    let section = build_section_box(&title);
-
-    let caption = Label::new(Some(
-        "These AUR packages link to libraries that changed in this update. Rebuild them so they keep working.",
-    ));
-    caption.add_css_class("dim-label");
-    caption.set_xalign(0.0);
-    caption.set_wrap(true);
-    section.card.append(&caption);
-
-    let list_box = ListBox::new();
-    list_box.set_selection_mode(SelectionMode::None);
-    list_box.add_css_class("boxed-list");
-
-    let checkboxes: Rc<RefCell<Vec<(String, CheckButton)>>> = Rc::new(RefCell::new(Vec::new()));
-
-    for pkg in &packages {
-        let row = ListBoxRow::new();
-        row.set_activatable(false);
-        row.set_selectable(false);
-
-        let row_box = GtkBox::new(Orientation::Horizontal, 12);
-        row_box.set_margin_start(12);
-        row_box.set_margin_end(12);
-        row_box.set_margin_top(8);
-        row_box.set_margin_bottom(8);
-
-        let check = CheckButton::new();
-        check.set_active(true);
-        check.set_valign(Align::Center);
-        row_box.append(&check);
-
-        let name_label = Label::new(Some(pkg));
-        name_label.set_xalign(0.0);
-        name_label.set_hexpand(true);
-        row_box.append(&name_label);
-
-        row.set_child(Some(&row_box));
-        list_box.append(&row);
-
-        checkboxes.borrow_mut().push((pkg.clone(), check));
-    }
-
-    section.card.append(&list_box);
-
-    let button_row = GtkBox::new(Orientation::Horizontal, 0);
-    button_row.set_halign(Align::End);
-    button_row.set_margin_top(4);
-
-    let rebuild_btn = Button::with_label("Rebuild selected");
-    rebuild_btn.add_css_class("suggested-action");
-    button_row.append(&rebuild_btn);
-
-    section.card.append(&button_row);
-
-    let checkboxes_clone = checkboxes.clone();
-    let window_clone = window.clone();
-    rebuild_btn.connect_clicked(move |_| {
-        let selected: Vec<String> = checkboxes_clone
-            .borrow()
-            .iter()
-            .filter(|(_, c)| c.is_active())
-            .map(|(name, _)| name.clone())
-            .collect();
-
-        log_info!(
-            "post-update: Rebuild AUR clicked ({} selected)",
-            selected.len()
-        );
-        if selected.is_empty() {
-            return;
-        }
-
-        run_aur_rebuild(&window_clone, selected);
-    });
-
-    page.sections_box.append(&section.wrapper);
-    page.section_visibility.borrow_mut().aur_rebuild = true;
     refresh_all_clear(page);
 }
 
@@ -919,19 +825,6 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
             Vec::new()
         };
 
-        let rebuild_result = gio::spawn_blocking(|| get_aur_rebuild_packages()).await;
-        let aur_rebuild = match rebuild_result {
-            Ok(Ok(list)) => list,
-            Ok(Err(e)) => {
-                eprintln!("Failed to detect AUR packages needing rebuild: {}", e);
-                Vec::new()
-            }
-            Err(e) => {
-                eprintln!("AUR rebuild detection thread failed: {:?}", e);
-                Vec::new()
-            }
-        };
-
         POST_UPDATE_PAGE.with(|cell| {
             if let Some(page) = cell.borrow().as_ref() {
                 set_orphans_section(page, orphans, &window);
@@ -940,7 +833,6 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
                 set_services_section(page, services);
                 set_flatpak_unused_section(page, flatpak_unused, &window);
                 set_resolutions_section(page, switches, &window);
-                set_aur_rebuild_section(page, aur_rebuild, &window);
                 page.reboot_banner.set_visible(reboot_pending);
                 finish_post_update_loading(page);
             }
@@ -1136,28 +1028,6 @@ fn run_orphan_removal(window: &ApplicationWindow, packages: Vec<String>) {
     }
 
     let command = format!("sudo pacman -Rns {}", quoted.join(" "));
-    run_post_update_command(window, &command);
-}
-
-fn run_aur_rebuild(window: &ApplicationWindow, packages: Vec<String>) {
-    let parts = match rebuild_aur_packages(packages) {
-        Ok(parts) => parts,
-        Err(e) => {
-            eprintln!("Failed to build AUR rebuild command: {}", e);
-            return;
-        }
-    };
-
-    let command = parts
-        .iter()
-        .filter_map(|p| try_quote(p).ok().map(|c| c.into_owned()))
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    if command.is_empty() {
-        return;
-    }
-
     run_post_update_command(window, &command);
 }
 

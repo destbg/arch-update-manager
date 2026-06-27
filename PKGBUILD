@@ -16,7 +16,6 @@ optdepends=('paru: AUR helper support'
             'timeshift: pre-update system snapshots'
             'snapper: pre-update Btrfs snapshots'
             'aur-scanner: scan AUR packages for security issues'
-            'rebuild-detector: find AUR packages that need a rebuild after updates'
             'rate-mirrors: refresh and rank the pacman mirror list')
 source=("git+$url.git#tag=${pkgver}")
 sha256sums=('SKIP')

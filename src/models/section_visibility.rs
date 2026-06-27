@@ -6,5 +6,4 @@ pub struct SectionVisibility {
     pub services: bool,
     pub flatpak_unused: bool,
     pub resolutions: bool,
-    pub aur_rebuild: bool,
 }

@@ -75,15 +75,4 @@ impl AurManagers {
             AurManagers::Shelly => vec![],
         };
     }
-
-    pub fn rebuild_args(&self) -> Vec<&'static str> {
-        return match self {
-            AurManagers::Yay => vec!["-S", "--rebuild"],
-            AurManagers::Paru => vec!["-S", "--rebuild"],
-            AurManagers::Pikaur => vec!["-S", "--rebuild"],
-            AurManagers::Trizen => vec!["-S"],
-            AurManagers::PamacCli => vec!["reinstall"],
-            AurManagers::Shelly => vec!["aur", "update"],
-        };
-    }
 }
