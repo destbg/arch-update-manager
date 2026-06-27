@@ -1,4 +1,4 @@
-name: Build and Update AUR (git)
+name: Update AUR (git)
 
 on:
   push:
@@ -12,13 +12,12 @@ on:
 permissions:
   contents: read
 
-# Only one git build at a time, and let a newer commit cancel an in-flight build.
 concurrency:
   group: aur-git
   cancel-in-progress: true
 
 jobs:
-  build-and-update-aur-git:
+  update-aur-git:
     runs-on: ubuntu-latest
     container: archlinux:latest
     env:
@@ -28,32 +27,30 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib pkgconf rust gtk4 glib2 vte4 gtksourceview5
+          # No compiler or GUI libs. A -git package is built by the user, so CI
+          # only needs makepkg (base-devel), git, and ssh to refresh the AUR.
+          pacman -Syu --noconfirm --needed base-devel git openssh
 
       - name: Create non-root build user
         run: |
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
 
-      - name: Stage PKGBUILD for build
+      - name: Stage PKGBUILD
         run: |
           install -d build
           cp -f PKGBUILD.git build/PKGBUILD
           printf '* text=auto eol=lf\n' > build/.gitattributes
           chown -R builder:builder build
 
-      - name: Build package from latest main
+      - name: Compute version from latest main
         working-directory: build
         run: |
-          # Full makepkg: clones main, runs pkgver(), compiles the release
-          # binaries. This fails the job if main no longer builds.
-          sudo -u builder makepkg -s --noconfirm --needed --cleanbuild
+          sudo -u builder makepkg -o --noprepare --nodeps --skipinteg --noconfirm
 
       - name: Generate .SRCINFO with computed pkgver
         working-directory: build
         run: |
-          # makepkg --printsrcinfo runs pkgver() against the cloned source in
-          # src/, so .SRCINFO carries the real version of the current commit.
           sudo -u builder makepkg --printsrcinfo > .SRCINFO
 
       - name: Setup SSH for AUR
