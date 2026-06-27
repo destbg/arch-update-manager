@@ -39,6 +39,8 @@ jobs:
         run: |
           install -d build
           cp -f PKGBUILD.git build/PKGBUILD
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}.git"
+          sed -i -E "s|^source=\(.*|source=(\"\$pkgname::git+${REPO_URL}#commit=${GITHUB_SHA}\")|" build/PKGBUILD
           printf '* text=auto eol=lf\n' > build/.gitattributes
           chown -R builder:builder build
 
