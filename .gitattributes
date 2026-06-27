@@ -1,5 +1,6 @@
 PKGBUILD text eol=lf
 PKGBUILD.bin text eol=lf
+PKGBUILD.git text eol=lf
 *.rs text eol=lf
 *.toml text eol=lf
 *.yml text eol=lf

@@ -29,6 +29,11 @@ Or using the AUR
 yay arch-update-manager
 ```
 
+There are three AUR packages:
+- `arch-update-manager` builds from the latest tagged release
+- `arch-update-manager-bin` installs the prebuilt binary from that release
+- `arch-update-manager-git` builds from the latest commit on main
+
 ## License
 
 This project is licensed under the MIT License.

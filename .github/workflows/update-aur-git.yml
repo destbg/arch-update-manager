@@ -1,0 +1,118 @@
+name: Build and Update AUR (git)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'showcase.png'
+      - 'release.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only one git build at a time, and let a newer commit cancel an in-flight build.
+concurrency:
+  group: aur-git
+  cancel-in-progress: true
+
+jobs:
+  build-and-update-aur-git:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    env:
+      AUR_GIT: arch-update-manager-git
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib pkgconf rust gtk4 glib2 vte4 gtksourceview5
+
+      - name: Create non-root build user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
+
+      - name: Stage PKGBUILD for build
+        run: |
+          install -d build
+          cp -f PKGBUILD.git build/PKGBUILD
+          printf '* text=auto eol=lf\n' > build/.gitattributes
+          chown -R builder:builder build
+
+      - name: Build package from latest main
+        working-directory: build
+        run: |
+          # Full makepkg: clones main, runs pkgver(), compiles the release
+          # binaries. This fails the job if main no longer builds.
+          sudo -u builder makepkg -s --noconfirm --needed --cleanbuild
+
+      - name: Generate .SRCINFO with computed pkgver
+        working-directory: build
+        run: |
+          # makepkg --printsrcinfo runs pkgver() against the cloned source in
+          # src/, so .SRCINFO carries the real version of the current commit.
+          sudo -u builder makepkg --printsrcinfo > .SRCINFO
+
+      - name: Setup SSH for AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 /home/builder/.ssh
+
+          if printf '%s' "$AUR_SSH_PRIVATE_KEY" | grep -q 'BEGIN'; then
+            printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/aur_key
+          elif printf '%s' "$AUR_SSH_PRIVATE_KEY" | base64 -d >/home/builder/.ssh/aur_key 2>/dev/null; then
+            :
+          else
+            printf '%s' "$AUR_SSH_PRIVATE_KEY" | sed 's/\\n/\n/g' > /home/builder/.ssh/aur_key
+          fi
+          tr -d '\r' < /home/builder/.ssh/aur_key > /home/builder/.ssh/aur_key.clean
+          mv /home/builder/.ssh/aur_key.clean /home/builder/.ssh/aur_key
+          chmod 600 /home/builder/.ssh/aur_key
+
+          ssh-keyscan -t ed25519,rsa aur.archlinux.org >> /home/builder/.ssh/known_hosts
+          {
+            echo "Host aur.archlinux.org"
+            echo "  User aur"
+            echo "  IdentitiesOnly yes"
+            echo "  IdentityFile /home/builder/.ssh/aur_key"
+            echo "  PubkeyAcceptedKeyTypes +ssh-ed25519,ssh-rsa"
+          } > /home/builder/.ssh/config
+          chown -R builder:builder /home/builder/.ssh
+
+      - name: Clone AUR repository
+        run: |
+          set -eu
+          REPO="ssh://aur@aur.archlinux.org/${AUR_GIT}.git"
+          sudo -u builder GIT_SSH_COMMAND="ssh -F /home/builder/.ssh/config" git clone "$REPO" aur-git
+
+      - name: Ensure LF line endings in AUR repo
+        run: |
+          printf '* text=auto eol=lf\n' > aur-git/.gitattributes
+
+      - name: Copy PKGBUILD and .SRCINFO into AUR repo
+        run: |
+          cp -f build/PKGBUILD aur-git/PKGBUILD
+          cp -f build/.SRCINFO aur-git/.SRCINFO
+          chown -R builder:builder aur-git
+
+      - name: Commit and push to AUR (git)
+        working-directory: aur-git
+        env:
+          AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
+          AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
+        run: |
+          sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
+          sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
+          sudo -u builder git symbolic-ref HEAD refs/heads/master
+          sudo -u builder git add -f .gitattributes PKGBUILD .SRCINFO
+          if ! sudo -u builder git diff --cached --quiet; then
+            PKGVER="$(sed -n 's/^\tpkgver = //p' .SRCINFO)"
+            sudo -u builder git commit -m "Update to ${PKGVER}"
+            sudo -u builder git push origin HEAD:master
+          else
+            echo "No changes."
+          fi
