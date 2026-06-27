@@ -13,7 +13,9 @@ use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_sn
 use crate::log_info;
 use crate::models::package_object::PackageUpdateObject;
 use crate::models::package_update::PackageUpdate;
-use crate::ui::dialogs::{create_progress_dialog, show_confirm_dialog, show_error_dialog};
+use crate::ui::dialogs::{
+    create_progress_dialog, show_confirm_dialog, show_error_dialog, show_partial_upgrade_dialog,
+};
 use crate::ui::main_window::{find_favorites_column, find_package_store, load_packages};
 use crate::ui::package_list::{save_unselected_from_store, update_statusbar};
 use crate::ui::settings_dialog::show_settings_dialog;
@@ -117,34 +119,64 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                         && is_snapper_installed()
                         && !is_snap_pac_installed();
 
-                    let mut message = String::from("Install selected updates?");
+                    let mut snapshot_note = String::new();
                     if create_snapshot {
-                        message.push_str("\nA Timeshift snapshot will be created.");
+                        snapshot_note.push_str("\nA Timeshift snapshot will be created.");
                     }
                     if create_snapper {
-                        message.push_str("\nA Snapper snapshot will be created.");
+                        snapshot_note.push_str("\nA Snapper snapshot will be created.");
                     }
 
-                    let confirm_dialog =
-                        show_confirm_dialog(&window, "Confirm Installation", &message, "Install");
+                    let (selected_core, total_core) = count_core_updates(&store);
+                    let partial = selected_core > 0 && selected_core < total_core;
 
-                    confirm_dialog.connect_response(move |dialog, response| {
-                        if response == gtk4::ResponseType::Accept {
-                            log_info!("install confirmation accepted");
-                            if let Err(e) = install_selected_packages_ui(
-                                &store,
-                                &window,
-                                create_snapshot,
-                                create_snapper,
-                            ) {
-                                log_info!("install failed: {}", e);
-                                eprintln!("Failed to install packages: {}", e);
+                    if partial {
+                        let message = format!(
+                            "You selected {} of {} core package updates.\n\nInstalling only some of them is a partial upgrade.\nThis can sometimes cause errors or leave a package broken.{}",
+                            selected_core, total_core, snapshot_note
+                        );
+                        let dialog = show_partial_upgrade_dialog(&window, &message);
+
+                        let store = store.clone();
+                        let window = window.clone();
+                        dialog.connect_response(move |dialog, response| {
+                            match response {
+                                gtk4::ResponseType::Yes => {
+                                    log_info!("partial upgrade: full upgrade chosen");
+                                    select_all_official(&store);
+                                    run_install(&store, &window, create_snapshot, create_snapper);
+                                }
+                                gtk4::ResponseType::Accept => {
+                                    log_info!("partial upgrade: install selected anyway");
+                                    run_install(&store, &window, create_snapshot, create_snapper);
+                                }
+                                _ => {
+                                    log_info!("partial upgrade: cancelled");
+                                }
                             }
-                        } else {
-                            log_info!("install confirmation dismissed");
-                        }
-                        dialog.close();
-                    });
+                            dialog.close();
+                        });
+                    } else {
+                        let message = format!("Install selected updates?{}", snapshot_note);
+                        let confirm_dialog = show_confirm_dialog(
+                            &window,
+                            "Confirm Installation",
+                            &message,
+                            "Install",
+                        );
+
+                        let store = store.clone();
+                        let window = window.clone();
+                        confirm_dialog.connect_response(move |dialog, response| {
+                            if response == gtk4::ResponseType::Accept {
+                                log_info!("install confirmation accepted");
+                                run_install(&store, &window, create_snapshot, create_snapper);
+                            } else {
+                                log_info!("install confirmation dismissed");
+                            }
+                            dialog.close();
+                        });
+                    }
                 }
             }
         }
@@ -303,6 +335,52 @@ fn select_all_packages(store: &ListStore, statusbar: &Statusbar) {
 
     update_statusbar(statusbar, store);
     save_unselected_from_store(store);
+}
+
+fn is_core_repo(repository: &str) -> bool {
+    return repository.to_ascii_lowercase().contains("core");
+}
+
+fn count_core_updates(store: &ListStore) -> (usize, usize) {
+    let mut selected = 0;
+    let mut total = 0;
+    for i in 0..store.n_items() {
+        let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() else {
+            continue;
+        };
+        let data = item.data();
+        if is_core_repo(&data.repository) {
+            total += 1;
+            if data.selected {
+                selected += 1;
+            }
+        }
+    }
+    return (selected, total);
+}
+
+fn select_all_official(store: &ListStore) {
+    for i in 0..store.n_items() {
+        let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() else {
+            continue;
+        };
+        let data = item.data();
+        if data.repository != AUR_NAME && data.repository != FLATPAK_NAME {
+            item.set_selected(true);
+        }
+    }
+}
+
+fn run_install(
+    store: &ListStore,
+    window: &ApplicationWindow,
+    create_snapshot: bool,
+    create_snapper: bool,
+) {
+    if let Err(e) = install_selected_packages_ui(store, window, create_snapshot, create_snapper) {
+        log_info!("install failed: {}", e);
+        eprintln!("Failed to install packages: {}", e);
+    }
 }
 
 fn install_selected_packages_ui(

@@ -68,3 +68,21 @@ pub fn show_confirm_dialog(
 
     return dialog;
 }
+
+pub fn show_partial_upgrade_dialog(parent: &ApplicationWindow, message: &str) -> MessageDialog {
+    let dialog = MessageDialog::builder()
+        .transient_for(parent)
+        .modal(true)
+        .message_type(MessageType::Warning)
+        .text("Partial upgrade")
+        .secondary_text(message)
+        .build();
+
+    dialog.add_button("Cancel", ResponseType::Cancel);
+    dialog.add_button("Install selected anyway", ResponseType::Accept);
+    dialog.add_button("Full upgrade", ResponseType::Yes);
+
+    dialog.show();
+
+    return dialog;
+}
