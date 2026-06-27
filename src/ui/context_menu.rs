@@ -18,6 +18,7 @@ use crate::ui::downgrade_dialog::show_downgrade_dialog;
 use crate::ui::main_window::load_packages;
 use crate::ui::package_files_dialog::show_package_files_dialog;
 use crate::ui::package_list::refresh_favorite_button;
+use crate::ui::aur_scan_dialog::show_aur_scan_dialog;
 use crate::ui::pkgbuild_review_dialog::show_pkgbuild_review_dialog;
 
 pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f64, y: f64) {
@@ -67,6 +68,16 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
                 show_pkgbuild_review_dialog(window.upcast_ref::<gtk4::Window>(), &name);
             }
         });
+
+        if !package.aur_scan_findings.is_empty() {
+            add_action(&vbox, &popover, "View aur-scan results", {
+                let name = package.name.clone();
+                let window = window.clone();
+                move || {
+                    show_aur_scan_dialog(window.upcast_ref::<gtk4::Window>(), &name);
+                }
+            });
+        }
     } else if !is_flatpak {
         add_action(&vbox, &popover, "Open Arch package page", {
             let name = package.name.clone();

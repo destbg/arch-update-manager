@@ -229,6 +229,7 @@ fn create_main_content(
         let url_button = info_panel.url_button.clone();
         let release_notes_button = info_panel.release_notes_button.clone();
         let pkgbuild_button = info_panel.pkgbuild_button.clone();
+        let aur_scan_button = info_panel.aur_scan_button.clone();
         let ignore_button = info_panel.ignore_button.clone();
         let ignore_handler_id = info_panel.ignore_handler_id.clone();
         let current_url = info_panel.current_url.clone();
@@ -303,6 +304,7 @@ fn create_main_content(
 
                 *current_package.borrow_mut() = Some(package_data.name.clone());
                 pkgbuild_button.set_visible(package_data.repository == AUR_NAME);
+                aur_scan_button.set_visible(!package_data.aur_scan_findings.is_empty());
                 let is_flatpak = package_data.repository == FLATPAK_NAME;
                 if is_flatpak {
                     ignore_button.set_visible(false);
@@ -333,6 +335,7 @@ fn create_main_content(
 
                 *current_package.borrow_mut() = None;
                 pkgbuild_button.set_visible(false);
+                aur_scan_button.set_visible(false);
                 ignore_button.set_visible(false);
             }
         });

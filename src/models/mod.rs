@@ -1,6 +1,7 @@
 pub mod app_settings;
 pub mod aur_info;
 pub mod aur_managers;
+pub mod aur_scan_finding;
 pub mod cache_candidates;
 pub mod cached_version;
 pub mod check_schedule;

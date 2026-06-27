@@ -1,3 +1,4 @@
+use crate::models::aur_scan_finding::AurScanFinding;
 use crate::models::flatpak_installation::FlatpakInstallation;
 
 #[derive(Clone, Debug)]
@@ -23,6 +24,7 @@ pub struct PackageUpdate {
     pub new_permissions: Vec<String>,
     pub extra_dependencies: Vec<String>,
     pub pkgbuild_needs_review: bool,
+    pub aur_scan_findings: Vec<AurScanFinding>,
     pub flatpak_installation: Option<FlatpakInstallation>,
 }
 
@@ -30,6 +32,11 @@ impl PackageUpdate {
     pub fn maintainer_changed(&self) -> bool {
         return self.previous_maintainer.is_some()
             && self.previous_maintainer.as_deref() != self.maintainer.as_deref();
+    }
+
+    pub fn aur_scan_summary(&self) -> Option<(String, usize)> {
+        let worst = self.aur_scan_findings.iter().max_by_key(|f| f.severity_rank())?;
+        return Some((worst.severity.clone(), self.aur_scan_findings.len()));
     }
 }
 
@@ -57,6 +64,7 @@ impl Default for PackageUpdate {
             new_permissions: Vec::new(),
             extra_dependencies: Vec::new(),
             pkgbuild_needs_review: false,
+            aur_scan_findings: Vec::new(),
             flatpak_installation: None,
         }
     }

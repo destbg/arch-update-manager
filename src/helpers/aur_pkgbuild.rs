@@ -38,6 +38,26 @@ pub fn pkgbuild_needs_review(package: &str) -> bool {
     return false;
 }
 
+pub fn find_clone_dir(package: &str) -> Option<PathBuf> {
+    let cache = PathBuf::from(user_home()?).join(".cache");
+
+    let candidates = [
+        cache.join("paru").join("clone").join(package),
+        cache.join("paru").join(package),
+        cache.join("yay").join(package),
+        cache.join("trizen").join(package),
+        cache.join("pikaur").join("aur_repos").join(package),
+    ];
+
+    for dir in candidates {
+        if dir.join(".git").exists() && dir.join("PKGBUILD").exists() {
+            return Some(dir);
+        }
+    }
+
+    return None;
+}
+
 fn compute_review(dir: &Path) -> Option<(String, bool)> {
     let user = get_original_user();
     let dir_str = dir.to_str()?;
@@ -138,26 +158,6 @@ fn fetch_remote_pkgbuild(package: &str) -> Result<String> {
     );
     return http_get(&url, PKGBUILD_FETCH_TIMEOUT_SECS)
         .with_context(|| format!("Could not download the PKGBUILD for {}", package));
-}
-
-fn find_clone_dir(package: &str) -> Option<PathBuf> {
-    let cache = PathBuf::from(user_home()?).join(".cache");
-
-    let candidates = [
-        cache.join("paru").join("clone").join(package),
-        cache.join("paru").join(package),
-        cache.join("yay").join(package),
-        cache.join("trizen").join(package),
-        cache.join("pikaur").join("aur_repos").join(package),
-    ];
-
-    for dir in candidates {
-        if dir.join(".git").exists() && dir.join("PKGBUILD").exists() {
-            return Some(dir);
-        }
-    }
-
-    return None;
 }
 
 fn user_home() -> Option<String> {

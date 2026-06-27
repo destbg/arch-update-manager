@@ -154,6 +154,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 new_permissions: Vec::new(),
                 extra_dependencies: Vec::new(),
                 pkgbuild_needs_review: false,
+                aur_scan_findings: Vec::new(),
                 flatpak_installation: None,
             });
         }

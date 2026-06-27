@@ -1,3 +1,4 @@
+pub mod aur_scan_dialog;
 pub mod blacklist_dialog;
 pub mod context_menu;
 pub mod dialogs;

@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::helpers::elevated::open_url_as_user;
 use crate::log_info;
 use crate::models::info_panel::InfoPanel;
+use crate::ui::aur_scan_dialog::show_aur_scan_dialog;
 use crate::ui::pkgbuild_review_dialog::show_pkgbuild_review_dialog;
 
 pub fn create_info_panel() -> InfoPanel {
@@ -79,6 +80,13 @@ pub fn create_info_panel() -> InfoPanel {
     pkgbuild_button.set_visible(false);
     header.append(&pkgbuild_button);
 
+    let aur_scan_button = Button::from_icon_name("security-high-symbolic");
+    aur_scan_button.set_tooltip_text(Some("View aur-scan results"));
+    aur_scan_button.add_css_class("flat");
+    aur_scan_button.set_halign(Align::End);
+    aur_scan_button.set_visible(false);
+    header.append(&aur_scan_button);
+
     let release_notes_button = Button::from_icon_name("emblem-documents-symbolic");
     release_notes_button.set_tooltip_text(Some("Open release notes"));
     release_notes_button.add_css_class("flat");
@@ -151,6 +159,18 @@ pub fn create_info_panel() -> InfoPanel {
         show_pkgbuild_review_dialog(&window, &package);
     });
 
+    let current_package_for_scan = current_package.clone();
+    aur_scan_button.connect_clicked(move |btn| {
+        let Some(package) = current_package_for_scan.borrow().clone() else {
+            return;
+        };
+        let Some(window) = btn.root().and_downcast::<gtk4::Window>() else {
+            return;
+        };
+        log_info!("info panel: view aur-scan results {}", package);
+        show_aur_scan_dialog(&window, &package);
+    });
+
     let ignore_handler_id: Rc<RefCell<Option<glib::SignalHandlerId>>> = Rc::new(RefCell::new(None));
 
     return InfoPanel {
@@ -164,6 +184,7 @@ pub fn create_info_panel() -> InfoPanel {
         url_button,
         release_notes_button,
         pkgbuild_button,
+        aur_scan_button,
         ignore_button,
         ignore_handler_id,
         current_url,

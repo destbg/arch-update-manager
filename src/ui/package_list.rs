@@ -1,4 +1,4 @@
-use crate::constants::AUR_NAME;
+use crate::constants::{AUR_NAME, is_own_package};
 use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::kick_tray;
 use crate::helpers::unselected_packages::save_unselected_packages;
@@ -776,10 +776,16 @@ fn create_name_column(column_view: &ColumnView) {
         name_label.set_markup(&name_markup(&data));
         desc_label.set_text(&data.description);
 
-        if data.security_issues.is_empty() {
+        let mut tooltip_parts: Vec<String> = data.security_issues.clone();
+        if !is_own_package(&data.name) {
+            for finding in &data.aur_scan_findings {
+                tooltip_parts.push(format!("aur-scan: {}", finding.title));
+            }
+        }
+        if tooltip_parts.is_empty() {
             name_label.set_tooltip_text(None);
         } else {
-            name_label.set_tooltip_text(Some(&data.security_issues.join(", ")));
+            name_label.set_tooltip_text(Some(&tooltip_parts.join("\n")));
         }
 
         unsafe {
@@ -932,6 +938,14 @@ fn name_markup(data: &PackageUpdate) -> String {
     }
     if let Some(severity) = &data.security_severity {
         markup.push_str(&badge(severity, severity_color(severity, dark)));
+    }
+    if !is_own_package(&data.name) {
+        if let Some((severity, count)) = data.aur_scan_summary() {
+            markup.push_str(&badge(
+                &format!("aur-scan: {} ({})", severity, count),
+                severity_color(&severity, dark),
+            ));
+        }
     }
 
     return markup;

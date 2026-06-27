@@ -14,6 +14,7 @@ pub struct InfoPanel {
     pub url_button: Button,
     pub release_notes_button: Button,
     pub pkgbuild_button: Button,
+    pub aur_scan_button: Button,
     pub ignore_button: ToggleButton,
     pub ignore_handler_id: Rc<RefCell<Option<SignalHandlerId>>>,
     pub current_url: Rc<RefCell<Option<String>>>,

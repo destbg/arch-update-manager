@@ -14,7 +14,8 @@ optdepends=('paru: AUR helper support'
             'flatpak: Flatpak package support'
             'meld: visual diff editor for pacnew files'
             'timeshift: pre-update system snapshots'
-            'snapper: pre-update Btrfs snapshots')
+            'snapper: pre-update Btrfs snapshots'
+            'aur-scanner: scan AUR packages for security issues')
 source=("git+$url.git#tag=${pkgver}")
 sha256sums=('SKIP')
 
