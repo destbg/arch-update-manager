@@ -27,8 +27,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # No compiler or GUI libs. A -git package is built by the user, so CI
-          # only needs makepkg (base-devel), git, and ssh to refresh the AUR.
           pacman -Syu --noconfirm --needed base-devel git openssh
 
       - name: Create non-root build user
@@ -105,12 +103,11 @@ jobs:
         run: |
           sudo -u builder git config user.name "${AUR_GIT_NAME:-github-actions}"
           sudo -u builder git config user.email "${AUR_GIT_EMAIL}"
-          sudo -u builder git symbolic-ref HEAD refs/heads/master
           sudo -u builder git add -f .gitattributes PKGBUILD .SRCINFO
           if ! sudo -u builder git diff --cached --quiet; then
             PKGVER="$(sed -n 's/^\tpkgver = //p' .SRCINFO)"
             sudo -u builder git commit -m "Update to ${PKGVER}"
-            sudo -u builder git push origin HEAD:master
+            sudo -u builder git push
           else
             echo "No changes."
           fi
