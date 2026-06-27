@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct SnapshotGroup {
     pub enable_check: gtk4::CheckButton,
     pub provider_combo: gtk4::ComboBoxText,

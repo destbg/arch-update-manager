@@ -37,32 +37,32 @@ pub fn show_settings_dialog(
         .title("Settings")
         .transient_for(parent)
         .modal(true)
-        .default_width(460)
-        .default_height(560)
+        .default_width(760)
+        .default_height(600)
         .build();
 
     let content_area = dialog.content_area();
     content_area.set_spacing(0);
     content_area.set_vexpand(true);
 
-    let stack = gtk4::Stack::new();
-    stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
-    stack.set_vexpand(true);
+    let updates_container = build_tab_container();
+    let (aur_enable_check, aur_combo, aur_devel_check) =
+        create_aur_group(settings, &updates_container);
+    let flatpak_enable_check = create_flatpak_group(settings, &updates_container);
+    let (min_update_age_spin, min_update_age_aur_only_check) =
+        create_update_age_group(settings, &updates_container);
 
-    let switcher = gtk4::StackSwitcher::new();
-    switcher.set_stack(Some(&stack));
-    switcher.set_halign(gtk4::Align::Fill);
-    switcher.set_hexpand(true);
-    switcher.set_margin_start(16);
-    switcher.set_margin_end(16);
-    switcher.set_margin_top(8);
-    switcher.set_margin_bottom(8);
+    let repos_container = build_tab_container();
+    let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &repos_container);
+    create_blacklist_group(&repos_container, parent);
 
-    let general_container = build_tab_container();
-    let snapshot_group = create_snapshot_group(settings, &general_container);
-    let news_check = create_news_group(settings, &general_container);
-    let mirror_refresh_check = create_mirror_group(settings, &general_container);
-    let remember_unselected_check = create_remember_unselected_group(settings, &general_container);
+    let maintenance_container = build_tab_container();
+    let snapshot_group = create_snapshot_group(settings, &maintenance_container);
+    let (keep_old_spin, keep_uninstalled_spin, auto_clean_cache_check) =
+        create_cache_group(settings, &maintenance_container);
+    let post_update_check = create_post_update_group(settings, &maintenance_container);
+
+    let tray_container = build_tab_container();
     let (
         system_tray_check,
         always_visible_check,
@@ -72,202 +72,202 @@ pub fn show_settings_dialog(
         check_schedule_combo,
         skip_metered_check,
         skip_battery_check,
-    ) = create_system_tray_group(settings, &general_container);
-    let log_retention_spin = create_logs_group(settings, &general_container);
-    stack.add_titled(&wrap_tab(&general_container), Some("general"), "General");
+    ) = create_system_tray_group(settings, &tray_container);
 
-    let packages_container = build_tab_container();
-    let (aur_enable_check, aur_combo, aur_devel_check) =
-        create_aur_group(settings, &packages_container);
-    let flatpak_enable_check = create_flatpak_group(settings, &packages_container);
-    let (min_update_age_spin, min_update_age_aur_only_check) =
-        create_update_age_group(settings, &packages_container);
-    stack.add_titled(&wrap_tab(&packages_container), Some("packages"), "Packages");
-
-    let pacman_container = build_tab_container();
-    let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &pacman_container);
-    let (keep_old_spin, keep_uninstalled_spin, auto_clean_cache_check) =
-        create_cache_group(settings, &pacman_container);
-    create_blacklist_group(&pacman_container, parent);
-    stack.add_titled(&wrap_tab(&pacman_container), Some("pacman"), "Pacman");
-
-    let interface_container = build_tab_container();
+    let appearance_container = build_tab_container();
     let (show_desc_check, show_updated_check) =
-        create_show_descriptions_group(settings, &interface_container);
-    let post_update_check = create_post_update_group(settings, &interface_container);
+        create_show_descriptions_group(settings, &appearance_container);
     let (fav_enable_check, fav_show_col_check, manage_btn, mode_btn) =
-        create_favorites_group(settings, &interface_container, parent);
-    stack.add_titled(
-        &wrap_tab(&interface_container),
-        Some("interface"),
-        "Interface",
-    );
+        create_favorites_group(settings, &appearance_container, parent);
+    let remember_unselected_check =
+        create_remember_unselected_group(settings, &appearance_container);
 
-    content_area.append(&switcher);
-    content_area.append(&stack);
+    let system_container = build_tab_container();
+    let news_check = create_news_group(settings, &system_container);
+    let mirror_refresh_check = create_mirror_group(settings, &system_container);
+    let log_retention_spin = create_logs_group(settings, &system_container);
 
-    let switcher_clone = switcher.clone();
-    glib::idle_add_local_once(move || {
-        pad_switcher_buttons(&switcher_clone);
-    });
+    let categories: [(&str, &str); 6] = [
+        ("Updates", "software-update-available-symbolic"),
+        ("Repositories", "drive-harddisk-symbolic"),
+        ("Snapshots & Cache", "document-save-symbolic"),
+        ("Tray & Notifications", "preferences-system-notifications-symbolic"),
+        ("Appearance", "preferences-desktop-appearance-symbolic"),
+        ("System", "emblem-system-symbolic"),
+    ];
 
-    let save_all = {
-        let aur_enable_check = aur_enable_check.clone();
-        let aur_combo = aur_combo.clone();
-        let aur_devel_check = aur_devel_check.clone();
-        let snapshot_enable_check = snapshot_group.enable_check.clone();
-        let snapshot_provider_combo = snapshot_group.provider_combo.clone();
-        let retention_count_spin = snapshot_group.retention_count_spin.clone();
-        let retention_period_combo = snapshot_group.retention_period_combo.clone();
-        let fav_enable_check = fav_enable_check.clone();
-        let fav_show_col_check = fav_show_col_check.clone();
-        let separate_repo_check = separate_repo_check.clone();
-        let repo_checkboxes = repo_checkboxes.clone();
-        let remember_unselected_check = remember_unselected_check.clone();
-        let news_check = news_check.clone();
-        let mirror_refresh_check = mirror_refresh_check.clone();
-        let post_update_check = post_update_check.clone();
-        let flatpak_enable_check = flatpak_enable_check.clone();
-        let keep_old_spin = keep_old_spin.clone();
-        let keep_uninstalled_spin = keep_uninstalled_spin.clone();
-        let auto_clean_cache_check = auto_clean_cache_check.clone();
-        let system_tray_check = system_tray_check.clone();
-        let always_visible_check = always_visible_check.clone();
-        let only_favorites_check = only_favorites_check.clone();
-        let menu_only_favorites_check = menu_only_favorites_check.clone();
-        let notify_check = notify_check.clone();
-        let check_schedule_combo = check_schedule_combo.clone();
-        let skip_metered_check = skip_metered_check.clone();
-        let skip_battery_check = skip_battery_check.clone();
-        let show_desc_check = show_desc_check.clone();
-        let show_updated_check = show_updated_check.clone();
-        let min_update_age_spin = min_update_age_spin.clone();
-        let min_update_age_aur_only_check = min_update_age_aur_only_check.clone();
-        let log_retention_spin = log_retention_spin.clone();
+    let containers = [
+        updates_container,
+        repos_container,
+        maintenance_container,
+        tray_container,
+        appearance_container,
+        system_container,
+    ];
 
-        Rc::new(move || {
-            let mut new_settings = load_settings();
+    let content_vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    for container in &containers {
+        content_vbox.append(container);
+    }
 
-            new_settings.enable_aur_support = aur_enable_check.is_active();
+    let content_scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vexpand(true)
+        .hexpand(true)
+        .child(&content_vbox)
+        .build();
 
-            if let Some(active_id) = aur_combo.active_id() {
-                new_settings.preferred_aur_helper = if active_id == "auto" {
-                    None
-                } else {
-                    Some(active_id.to_string())
-                };
-            }
+    let mut card_records: Vec<(usize, gtk4::Widget, String)> = Vec::new();
+    for (index, container) in containers.iter().enumerate() {
+        let mut child = container.first_child();
+        while let Some(widget) = child {
+            let next = widget.next_sibling();
+            let text = collect_label_text(&widget).to_lowercase();
+            card_records.push((index, widget.clone(), text));
+            child = next;
+        }
+    }
 
-            new_settings.enable_devel_aur = aur_devel_check.is_active();
+    let card_records = Rc::new(card_records);
+    let containers = Rc::new(containers);
+    let selected_category = Rc::new(std::cell::Cell::new(0usize));
 
-            let snapshots_enabled = snapshot_enable_check.is_active();
-            let provider = snapshot_provider_combo.active_id();
-            let provider_str = provider.as_deref();
-            new_settings.create_timeshift_snapshot =
-                snapshots_enabled && provider_str == Some("timeshift");
-            new_settings.create_snapper_snapshot =
-                snapshots_enabled && provider_str == Some("snapper");
-            new_settings.snapshot_retention_count = retention_count_spin.value() as u32;
+    let search_entry = gtk4::SearchEntry::new();
+    search_entry.set_placeholder_text(Some("Search settings"));
+    search_entry.set_hexpand(true);
+    search_entry.set_margin_start(12);
+    search_entry.set_margin_end(12);
+    search_entry.set_margin_top(10);
+    search_entry.set_margin_bottom(10);
 
-            if let Some(active_id) = retention_period_combo.active_id() {
-                new_settings.snapshot_retention_period = match active_id.as_str() {
-                    "day" => SnapshotRetentionPeriod::Day,
-                    "week" => SnapshotRetentionPeriod::Week,
-                    "month" => SnapshotRetentionPeriod::Month,
-                    "year" => SnapshotRetentionPeriod::Year,
-                    _ => SnapshotRetentionPeriod::Forever,
-                };
-            }
-
-            new_settings.enable_favorites = fav_enable_check.is_active();
-            new_settings.show_favorites_column = fav_show_col_check.is_active();
-
-            new_settings.separate_repository_groups = separate_repo_check.is_active();
-
-            let mut selected_repos = Vec::new();
-            for (repo_id, checkbox) in repo_checkboxes.borrow().iter() {
-                if checkbox.is_active() {
-                    selected_repos.push(repo_id.clone());
+    let apply_filter: Rc<dyn Fn(&str)> = {
+        let card_records = card_records.clone();
+        let containers = containers.clone();
+        let selected_category = selected_category.clone();
+        Rc::new(move |query: &str| {
+            let query = query.trim().to_lowercase();
+            if query.is_empty() {
+                let selected = selected_category.get();
+                for (index, container) in containers.iter().enumerate() {
+                    for (card_index, card, _) in card_records.iter() {
+                        if *card_index == index {
+                            card.set_visible(true);
+                        }
+                    }
+                    container.set_visible(index == selected);
                 }
-            }
-            new_settings.separate_repositories = selected_repos;
-
-            new_settings.remember_unselected_packages = remember_unselected_check.is_active();
-            new_settings.check_arch_news = news_check.is_active();
-            new_settings.enable_mirror_refresh = mirror_refresh_check.is_active();
-            new_settings.run_post_update_checks = post_update_check.is_active();
-            new_settings.enable_flatpak_support = flatpak_enable_check.is_active();
-            new_settings.keep_old_packages = keep_old_spin.value() as u32;
-            new_settings.keep_uninstalled_packages = keep_uninstalled_spin.value() as u32;
-            new_settings.auto_clean_cache = auto_clean_cache_check.is_active();
-            new_settings.enable_system_tray = system_tray_check.is_active();
-            new_settings.tray_always_visible =
-                system_tray_check.is_active() && always_visible_check.is_active();
-            new_settings.tray_only_favorites =
-                system_tray_check.is_active() && only_favorites_check.is_active();
-            new_settings.tray_menu_only_favorites =
-                system_tray_check.is_active() && menu_only_favorites_check.is_active();
-            new_settings.show_update_notifications =
-                system_tray_check.is_active() && notify_check.is_active();
-            if let Some(active_id) = check_schedule_combo.active_id() {
-                new_settings.check_schedule = CheckSchedule::from_id(&active_id);
-            }
-            new_settings.skip_check_on_metered =
-                system_tray_check.is_active() && skip_metered_check.is_active();
-            new_settings.skip_check_on_battery =
-                system_tray_check.is_active() && skip_battery_check.is_active();
-            new_settings.show_package_descriptions = show_desc_check.is_active();
-            new_settings.show_updated_date = show_updated_check.is_active();
-            new_settings.min_update_age_days = min_update_age_spin.value() as u32;
-            new_settings.min_update_age_aur_only = min_update_age_aur_only_check.is_active();
-            new_settings.log_retention_days = log_retention_spin.value() as u32;
-
-            if let Err(e) = save_settings(&new_settings) {
-                log_info!("failed to save settings: {}", e);
-                eprintln!("Failed to save settings: {}", e);
             } else {
-                log_info!("settings saved");
+                for (index, container) in containers.iter().enumerate() {
+                    let mut any_visible = false;
+                    for (card_index, card, text) in card_records.iter() {
+                        if *card_index == index {
+                            let matches = text.contains(&query);
+                            card.set_visible(matches);
+                            any_visible |= matches;
+                        }
+                    }
+                    container.set_visible(any_visible);
+                }
             }
         })
     };
 
-    let aur_combo_weak = aur_combo.clone();
-    let aur_devel_check_weak = aur_devel_check.clone();
-    let save_all_clone = save_all.clone();
+    let sidebar_list = gtk4::ListBox::new();
+    sidebar_list.add_css_class("navigation-sidebar");
+    sidebar_list.add_css_class("settings-sidebar");
+    sidebar_list.set_vexpand(true);
+    sidebar_list.set_size_request(210, -1);
+
+    for (title, icon) in categories {
+        let row_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        row_box.set_margin_top(10);
+        row_box.set_margin_bottom(10);
+        row_box.set_margin_start(6);
+        row_box.set_margin_end(6);
+
+        let image = gtk4::Image::from_icon_name(icon);
+        row_box.append(&image);
+
+        let label = gtk4::Label::new(Some(title));
+        label.set_xalign(0.0);
+        row_box.append(&label);
+
+        let row = gtk4::ListBoxRow::new();
+        row.set_child(Some(&row_box));
+        sidebar_list.append(&row);
+    }
+
+    let apply_for_nav = apply_filter.clone();
+    let selected_for_nav = selected_category.clone();
+    let search_for_nav = search_entry.clone();
+    sidebar_list.connect_row_selected(move |_, row| {
+        let Some(row) = row else {
+            return;
+        };
+        selected_for_nav.set(row.index() as usize);
+        apply_for_nav(&search_for_nav.text());
+    });
+    sidebar_list.select_row(sidebar_list.row_at_index(0).as_ref());
+
+    let apply_for_search = apply_filter.clone();
+    search_entry.connect_search_changed(move |entry| {
+        apply_for_search(&entry.text());
+    });
+
+    let content_side = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    content_side.set_hexpand(true);
+    content_side.append(&search_entry);
+    content_side.append(&content_scroll);
+
+    let nav = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    nav.set_vexpand(true);
+    nav.append(&sidebar_list);
+    nav.append(&content_side);
+
+    content_area.append(&nav);
+
+    let aur_combo_for_enable = aur_combo.clone();
+    let aur_devel_for_enable = aur_devel_check.clone();
     aur_enable_check.connect_toggled(move |check| {
         let is_active = check.is_active();
-        aur_combo_weak.set_sensitive(is_active);
-        aur_devel_check_weak.set_sensitive(is_active);
-        save_all_clone();
+        aur_combo_for_enable.set_sensitive(is_active);
+        aur_devel_for_enable.set_sensitive(is_active);
+        update_settings(move |s| s.enable_aur_support = is_active);
     });
 
-    let save_all_clone = save_all.clone();
-    aur_combo.connect_changed(move |_| {
-        save_all_clone();
+    aur_combo.connect_changed(move |combo| {
+        let value = combo.active_id().and_then(|id| {
+            if id == "auto" {
+                None
+            } else {
+                Some(id.to_string())
+            }
+        });
+        update_settings(move |s| s.preferred_aur_helper = value);
     });
 
-    let save_all_clone = save_all.clone();
-    aur_devel_check.connect_toggled(move |_| {
-        save_all_clone();
+    aur_devel_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.enable_devel_aur = value);
     });
 
-    wire_snapshot_group_signals(&snapshot_group, save_all.clone());
+    wire_snapshot_group_signals(&snapshot_group);
 
-    let fav_show_col_check_weak = fav_show_col_check.downgrade();
+    let fav_show_col_for_enable = fav_show_col_check.downgrade();
     let manage_btn_weak = manage_btn.downgrade();
     let mode_btn_weak = mode_btn.downgrade();
-    let favorites_column2 = favorites_column.clone();
-    let save_all_clone = save_all.clone();
+    let favorites_column_for_enable = favorites_column.clone();
     fav_enable_check.connect_toggled(move |check| {
         let is_enabled = check.is_active();
-        if let Some(col) = &favorites_column {
-            let show_col = fav_show_col_check_weak
+        if let Some(col) = &favorites_column_for_enable {
+            let show_col = fav_show_col_for_enable
                 .upgrade()
                 .map(|c| c.is_active())
                 .unwrap_or(false);
             col.set_visible(is_enabled && show_col);
         }
-        if let Some(c) = fav_show_col_check_weak.upgrade() {
+        if let Some(c) = fav_show_col_for_enable.upgrade() {
             c.set_sensitive(is_enabled);
         }
         if let Some(btn) = manage_btn_weak.upgrade() {
@@ -276,161 +276,194 @@ pub fn show_settings_dialog(
         if let Some(btn) = mode_btn_weak.upgrade() {
             btn.set_sensitive(is_enabled);
         }
-        save_all_clone();
+        update_settings(move |s| s.enable_favorites = is_enabled);
     });
 
-    let fav_enable_check_weak = fav_enable_check.downgrade();
-    let save_all_clone = save_all.clone();
+    let fav_enable_for_col = fav_enable_check.downgrade();
+    let favorites_column_for_col = favorites_column.clone();
     fav_show_col_check.connect_toggled(move |check| {
-        if let Some(col) = &favorites_column2 {
-            let is_enabled = fav_enable_check_weak
+        let active = check.is_active();
+        if let Some(col) = &favorites_column_for_col {
+            let is_enabled = fav_enable_for_col
                 .upgrade()
                 .map(|c| c.is_active())
                 .unwrap_or(false);
-            col.set_visible(is_enabled && check.is_active());
+            col.set_visible(is_enabled && active);
         }
-        save_all_clone();
+        update_settings(move |s| s.show_favorites_column = active);
     });
 
-    let repo_checkboxes_weak = repo_checkboxes.clone();
-    let save_all_clone = save_all.clone();
+    let repo_checkboxes_for_enable = repo_checkboxes.clone();
     separate_repo_check.connect_toggled(move |check| {
         let is_active = check.is_active();
-        for (_, checkbox) in repo_checkboxes_weak.borrow().iter() {
+        for (_, checkbox) in repo_checkboxes_for_enable.borrow().iter() {
             checkbox.set_sensitive(is_active);
         }
-        save_all_clone();
+        update_settings(move |s| s.separate_repository_groups = is_active);
     });
 
     for (_, checkbox) in repo_checkboxes.borrow().iter() {
-        let save_all_clone = save_all.clone();
+        let repo_checkboxes_for_save = repo_checkboxes.clone();
         checkbox.connect_toggled(move |_| {
-            save_all_clone();
+            let selected: Vec<String> = repo_checkboxes_for_save
+                .borrow()
+                .iter()
+                .filter(|(_, c)| c.is_active())
+                .map(|(id, _)| id.clone())
+                .collect();
+            update_settings(move |s| s.separate_repositories = selected);
         });
     }
 
-    let save_all_clone = save_all.clone();
-    remember_unselected_check.connect_toggled(move |_| {
-        save_all_clone();
+    remember_unselected_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.remember_unselected_packages = value);
     });
 
-    let save_all_clone = save_all.clone();
-    news_check.connect_toggled(move |_| {
-        save_all_clone();
+    news_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.check_arch_news = value);
     });
 
-    let save_all_clone = save_all.clone();
-    post_update_check.connect_toggled(move |_| {
-        save_all_clone();
+    mirror_refresh_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.enable_mirror_refresh = value);
     });
 
-    let save_all_clone = save_all.clone();
-    flatpak_enable_check.connect_toggled(move |_| {
-        save_all_clone();
+    post_update_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.run_post_update_checks = value);
     });
 
-    let save_all_clone = save_all.clone();
-    keep_old_spin.connect_value_changed(move |_| {
-        save_all_clone();
+    flatpak_enable_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.enable_flatpak_support = value);
     });
 
-    let save_all_clone = save_all.clone();
-    keep_uninstalled_spin.connect_value_changed(move |_| {
-        save_all_clone();
+    keep_old_spin.connect_value_changed(move |spin| {
+        let value = spin.value() as u32;
+        update_settings(move |s| s.keep_old_packages = value);
     });
 
-    let save_all_clone = save_all.clone();
-    auto_clean_cache_check.connect_toggled(move |_| {
-        save_all_clone();
+    keep_uninstalled_spin.connect_value_changed(move |spin| {
+        let value = spin.value() as u32;
+        update_settings(move |s| s.keep_uninstalled_packages = value);
     });
 
-    let save_all_clone = save_all.clone();
-    let notify_check_weak = notify_check.clone();
-    let always_visible_check_weak = always_visible_check.clone();
-    let only_favorites_check_weak = only_favorites_check.clone();
-    let menu_only_favorites_check_weak = menu_only_favorites_check.clone();
-    let check_schedule_combo_weak = check_schedule_combo.clone();
-    let skip_metered_check_weak = skip_metered_check.clone();
-    let skip_battery_check_weak = skip_battery_check.clone();
+    auto_clean_cache_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.auto_clean_cache = value);
+    });
+
+    let notify_for_tray = notify_check.clone();
+    let always_visible_for_tray = always_visible_check.clone();
+    let only_favorites_for_tray = only_favorites_check.clone();
+    let menu_only_for_tray = menu_only_favorites_check.clone();
+    let schedule_for_tray = check_schedule_combo.clone();
+    let skip_metered_for_tray = skip_metered_check.clone();
+    let skip_battery_for_tray = skip_battery_check.clone();
     system_tray_check.connect_toggled(move |check| {
-        notify_check_weak.set_sensitive(check.is_active());
-        always_visible_check_weak.set_sensitive(check.is_active());
-        only_favorites_check_weak.set_sensitive(check.is_active());
-        menu_only_favorites_check_weak.set_sensitive(check.is_active());
-        check_schedule_combo_weak.set_sensitive(check.is_active());
-        skip_metered_check_weak.set_sensitive(check.is_active());
-        skip_battery_check_weak.set_sensitive(check.is_active());
-        save_all_clone();
-        if check.is_active() {
-            let schedule = check_schedule_combo_weak
+        let active = check.is_active();
+        notify_for_tray.set_sensitive(active);
+        always_visible_for_tray.set_sensitive(active);
+        only_favorites_for_tray.set_sensitive(active);
+        menu_only_for_tray.set_sensitive(active);
+        schedule_for_tray.set_sensitive(active);
+        skip_metered_for_tray.set_sensitive(active);
+        skip_battery_for_tray.set_sensitive(active);
+
+        let always = always_visible_for_tray.is_active();
+        let only_fav = only_favorites_for_tray.is_active();
+        let menu_only = menu_only_for_tray.is_active();
+        let notify = notify_for_tray.is_active();
+        let metered = skip_metered_for_tray.is_active();
+        let battery = skip_battery_for_tray.is_active();
+        update_settings(move |s| {
+            s.enable_system_tray = active;
+            s.tray_always_visible = active && always;
+            s.tray_only_favorites = active && only_fav;
+            s.tray_menu_only_favorites = active && menu_only;
+            s.show_update_notifications = active && notify;
+            s.skip_check_on_metered = active && metered;
+            s.skip_check_on_battery = active && battery;
+        });
+
+        if active {
+            let schedule = schedule_for_tray
                 .active_id()
                 .map(|id| CheckSchedule::from_id(&id))
                 .unwrap_or_default();
             apply_check_schedule(schedule);
         }
-        apply_tray_state(check.is_active());
+        apply_tray_state(active);
     });
 
-    let save_all_clone = save_all.clone();
-    notify_check.connect_toggled(move |_| {
-        save_all_clone();
+    let system_tray_for_notify = system_tray_check.clone();
+    notify_check.connect_toggled(move |check| {
+        let value = system_tray_for_notify.is_active() && check.is_active();
+        update_settings(move |s| s.show_update_notifications = value);
     });
 
-    let save_all_clone = save_all.clone();
     let only_favorites_for_excl = only_favorites_check.clone();
+    let system_tray_for_always = system_tray_check.clone();
     always_visible_check.connect_toggled(move |btn| {
         if btn.is_active() && only_favorites_for_excl.is_active() {
             only_favorites_for_excl.set_active(false);
         }
-        save_all_clone();
+        let value = system_tray_for_always.is_active() && btn.is_active();
+        update_settings(move |s| s.tray_always_visible = value);
         kick_tray();
     });
 
-    let save_all_clone = save_all.clone();
     let always_visible_for_excl = always_visible_check.clone();
+    let system_tray_for_only = system_tray_check.clone();
     only_favorites_check.connect_toggled(move |btn| {
         if btn.is_active() && always_visible_for_excl.is_active() {
             always_visible_for_excl.set_active(false);
         }
-        save_all_clone();
+        let value = system_tray_for_only.is_active() && btn.is_active();
+        update_settings(move |s| s.tray_only_favorites = value);
         kick_tray();
     });
 
-    let save_all_clone = save_all.clone();
-    menu_only_favorites_check.connect_toggled(move |_| {
-        save_all_clone();
+    let system_tray_for_menu = system_tray_check.clone();
+    menu_only_favorites_check.connect_toggled(move |btn| {
+        let value = system_tray_for_menu.is_active() && btn.is_active();
+        update_settings(move |s| s.tray_menu_only_favorites = value);
         kick_tray();
     });
 
-    let save_all_clone = save_all.clone();
-    skip_metered_check.connect_toggled(move |_| {
-        save_all_clone();
+    let system_tray_for_metered = system_tray_check.clone();
+    skip_metered_check.connect_toggled(move |btn| {
+        let value = system_tray_for_metered.is_active() && btn.is_active();
+        update_settings(move |s| s.skip_check_on_metered = value);
     });
 
-    let save_all_clone = save_all.clone();
-    skip_battery_check.connect_toggled(move |_| {
-        save_all_clone();
+    let system_tray_for_battery = system_tray_check.clone();
+    skip_battery_check.connect_toggled(move |btn| {
+        let value = system_tray_for_battery.is_active() && btn.is_active();
+        update_settings(move |s| s.skip_check_on_battery = value);
     });
 
-    let save_all_clone = save_all.clone();
     check_schedule_combo.connect_changed(move |combo| {
-        save_all_clone();
         let schedule = combo
             .active_id()
             .map(|id| CheckSchedule::from_id(&id))
             .unwrap_or_default();
+        let schedule_for_save = schedule.clone();
+        update_settings(move |s| s.check_schedule = schedule_for_save);
         apply_check_schedule(schedule);
     });
 
-    let save_all_clone = save_all.clone();
-    log_retention_spin.connect_value_changed(move |_| {
-        save_all_clone();
+    log_retention_spin.connect_value_changed(move |spin| {
+        let value = spin.value() as u32;
+        update_settings(move |s| s.log_retention_days = value);
     });
 
-    let save_all_clone = save_all.clone();
     let package_store_for_desc = package_store.clone();
-    show_desc_check.connect_toggled(move |_| {
-        save_all_clone();
+    show_desc_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.show_package_descriptions = value);
         if let Some(store) = &package_store_for_desc {
             let n = store.n_items();
             if n > 0 {
@@ -439,10 +472,10 @@ pub fn show_settings_dialog(
         }
     });
 
-    let save_all_clone = save_all.clone();
     let package_store_for_updated = package_store.clone();
-    show_updated_check.connect_toggled(move |_| {
-        save_all_clone();
+    show_updated_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.show_updated_date = value);
         if let Some(store) = &package_store_for_updated {
             let n = store.n_items();
             if n > 0 {
@@ -451,19 +484,48 @@ pub fn show_settings_dialog(
         }
     });
 
-    let save_all_clone = save_all.clone();
-    let aur_only_check_weak = min_update_age_aur_only_check.clone();
+    let aur_only_for_age = min_update_age_aur_only_check.clone();
     min_update_age_spin.connect_value_changed(move |spin| {
-        aur_only_check_weak.set_sensitive(spin.value() > 0.0);
-        save_all_clone();
+        let value = spin.value() as u32;
+        aur_only_for_age.set_sensitive(spin.value() > 0.0);
+        update_settings(move |s| s.min_update_age_days = value);
     });
 
-    let save_all_clone = save_all.clone();
-    min_update_age_aur_only_check.connect_toggled(move |_| {
-        save_all_clone();
+    min_update_age_aur_only_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.min_update_age_aur_only = value);
     });
 
     dialog.present();
+}
+
+fn update_settings(apply: impl FnOnce(&mut AppSettings)) {
+    let mut settings = load_settings();
+    apply(&mut settings);
+    if let Err(e) = save_settings(&settings) {
+        log_info!("failed to save settings: {}", e);
+        eprintln!("Failed to save settings: {}", e);
+    }
+}
+
+fn collect_label_text(widget: &gtk4::Widget) -> String {
+    let mut text = String::new();
+    collect_labels_into(widget, &mut text);
+    return text;
+}
+
+fn collect_labels_into(widget: &gtk4::Widget, out: &mut String) {
+    if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+        out.push_str(&label.text());
+        out.push(' ');
+    }
+
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        let next = c.next_sibling();
+        collect_labels_into(&c, out);
+        child = next;
+    }
 }
 
 fn create_aur_group(
@@ -877,32 +939,52 @@ fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> 
     };
 }
 
-fn wire_snapshot_group_signals(group: &SnapshotGroup, save_all: Rc<dyn Fn()>) {
+fn save_snapshot_settings(group: &SnapshotGroup) {
+    let enabled = group.enable_check.is_active();
+    let is_timeshift = group.provider_combo.active_id().as_deref() == Some("timeshift");
+    let is_snapper = group.provider_combo.active_id().as_deref() == Some("snapper");
+    let count = group.retention_count_spin.value() as u32;
+    let period = match group.retention_period_combo.active_id().as_deref() {
+        Some("day") => SnapshotRetentionPeriod::Day,
+        Some("week") => SnapshotRetentionPeriod::Week,
+        Some("month") => SnapshotRetentionPeriod::Month,
+        Some("year") => SnapshotRetentionPeriod::Year,
+        _ => SnapshotRetentionPeriod::Forever,
+    };
+
+    update_settings(move |s| {
+        s.create_timeshift_snapshot = enabled && is_timeshift;
+        s.create_snapper_snapshot = enabled && is_snapper;
+        s.snapshot_retention_count = count;
+        s.snapshot_retention_period = period;
+    });
+}
+
+fn wire_snapshot_group_signals(group: &SnapshotGroup) {
+    let save: Rc<dyn Fn()> = {
+        let group = group.clone();
+        Rc::new(move || save_snapshot_settings(&group))
+    };
+
     let provider_combo_w = group.provider_combo.clone();
     let retention_count_box_w = group.retention_count_box.clone();
     let retention_period_box_w = group.retention_period_box.clone();
     let deletion_info_label_w = group.deletion_info_label.clone();
     let snap_pac_info_w = group.snap_pac_info.clone();
     let snap_pac_installed = group.snap_pac_installed;
-    let save_all_clone = save_all.clone();
+    let save_clone = save.clone();
     group.enable_check.connect_toggled(move |check| {
         let enabled = check.is_active();
         provider_combo_w.set_sensitive(enabled);
-        let is_timeshift = provider_combo_w
-            .active_id()
-            .map(|id| id == "timeshift")
-            .unwrap_or(false);
-        let is_snapper = provider_combo_w
-            .active_id()
-            .map(|id| id == "snapper")
-            .unwrap_or(false);
+        let is_timeshift = provider_combo_w.active_id().as_deref() == Some("timeshift");
+        let is_snapper = provider_combo_w.active_id().as_deref() == Some("snapper");
         retention_count_box_w.set_sensitive(enabled && is_timeshift);
         retention_period_box_w.set_sensitive(enabled && is_timeshift);
         retention_count_box_w.set_visible(is_timeshift);
         retention_period_box_w.set_visible(is_timeshift);
         deletion_info_label_w.set_visible(is_timeshift);
         snap_pac_info_w.set_visible(enabled && is_snapper && snap_pac_installed);
-        save_all_clone();
+        save_clone();
     });
 
     let enable_check_w = group.enable_check.clone();
@@ -910,32 +992,29 @@ fn wire_snapshot_group_signals(group: &SnapshotGroup, save_all: Rc<dyn Fn()>) {
     let retention_period_box_w = group.retention_period_box.clone();
     let deletion_info_label_w = group.deletion_info_label.clone();
     let snap_pac_info_w = group.snap_pac_info.clone();
-    let save_all_clone = save_all.clone();
+    let save_clone = save.clone();
     group.provider_combo.connect_changed(move |combo| {
         let enabled = enable_check_w.is_active();
-        let is_timeshift = combo
-            .active_id()
-            .map(|id| id == "timeshift")
-            .unwrap_or(false);
-        let is_snapper = combo.active_id().map(|id| id == "snapper").unwrap_or(false);
+        let is_timeshift = combo.active_id().as_deref() == Some("timeshift");
+        let is_snapper = combo.active_id().as_deref() == Some("snapper");
         retention_count_box_w.set_sensitive(enabled && is_timeshift);
         retention_period_box_w.set_sensitive(enabled && is_timeshift);
         retention_count_box_w.set_visible(is_timeshift);
         retention_period_box_w.set_visible(is_timeshift);
         deletion_info_label_w.set_visible(is_timeshift);
         snap_pac_info_w.set_visible(enabled && is_snapper && snap_pac_installed);
-        save_all_clone();
+        save_clone();
     });
 
-    let save_all_clone = save_all.clone();
+    let save_clone = save.clone();
     group
         .retention_count_spin
-        .connect_value_changed(move |_| save_all_clone());
+        .connect_value_changed(move |_| save_clone());
 
-    let save_all_clone = save_all.clone();
+    let save_clone = save.clone();
     group
         .retention_period_combo
-        .connect_changed(move |_| save_all_clone());
+        .connect_changed(move |_| save_clone());
 }
 
 fn create_favorites_group(
@@ -1350,9 +1429,39 @@ fn create_logs_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4
     return spin;
 }
 
+fn install_settings_css() {
+    use std::sync::OnceLock;
+    static CSS_INSTALLED: OnceLock<()> = OnceLock::new();
+
+    CSS_INSTALLED.get_or_init(|| {
+        let Some(display) = gtk4::gdk::Display::default() else {
+            return;
+        };
+
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_data(
+            ".settings-card {
+                background-color: alpha(currentColor, 0.05);
+                border: 1px solid alpha(currentColor, 0.08);
+                border-radius: 12px;
+                padding: 16px;
+            }
+            .settings-sidebar {
+                background-color: alpha(currentColor, 0.05);
+            }",
+        );
+
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
+}
+
 fn create_preference_group(title: &str, description: &str) -> gtk4::Box {
     let group = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    group.add_css_class("preference-group");
+    group.add_css_class("settings-card");
 
     let title_label = gtk4::Label::new(Some(title));
     title_label.set_halign(gtk4::Align::Start);
@@ -1380,15 +1489,6 @@ fn build_tab_container() -> gtk4::Box {
     return container;
 }
 
-fn wrap_tab(content: &gtk4::Box) -> gtk4::ScrolledWindow {
-    return gtk4::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk4::PolicyType::Never)
-        .vscrollbar_policy(gtk4::PolicyType::Automatic)
-        .vexpand(true)
-        .child(content)
-        .build();
-}
-
 fn build_padded_button(label_text: &str) -> gtk4::Button {
     let button = gtk4::Button::new();
     let label = gtk4::Label::new(Some(label_text));
@@ -1398,54 +1498,3 @@ fn build_padded_button(label_text: &str) -> gtk4::Button {
     return button;
 }
 
-fn install_settings_css() {
-    use std::sync::OnceLock;
-    static CSS_INSTALLED: OnceLock<()> = OnceLock::new();
-
-    CSS_INSTALLED.get_or_init(|| {
-        let Some(display) = gtk4::gdk::Display::default() else {
-            return;
-        };
-
-        let provider = gtk4::CssProvider::new();
-        provider.load_from_data(
-            "stackswitcher button,
-             stackswitcher togglebutton {
-                padding-left: 14px;
-                padding-right: 14px;
-            }",
-        );
-
-        gtk4::style_context_add_provider_for_display(
-            &display,
-            &provider,
-            gtk4::STYLE_PROVIDER_PRIORITY_USER,
-        );
-    });
-}
-
-fn pad_switcher_buttons(switcher: &gtk4::StackSwitcher) {
-    let mut child = switcher.first_child();
-    while let Some(widget) = child {
-        let next = widget.next_sibling();
-        widget.set_hexpand(true);
-        widget.set_size_request(110, -1);
-        pad_labels_in_widget(&widget);
-        child = next;
-    }
-}
-
-fn pad_labels_in_widget(widget: &gtk4::Widget) {
-    if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
-        label.set_margin_start(14);
-        label.set_margin_end(14);
-        return;
-    }
-
-    let mut child = widget.first_child();
-    while let Some(c) = child {
-        let next = c.next_sibling();
-        pad_labels_in_widget(&c);
-        child = next;
-    }
-}
