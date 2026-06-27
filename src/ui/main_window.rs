@@ -2,12 +2,13 @@ use crate::constants::{AUR_NAME, FLATPAK_NAME};
 use crate::helpers::arch_news::news_to_show;
 use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::elevated::open_url_as_user;
+use crate::helpers::mirrors::{is_mirrorlist_stale, mirror_refresh_command, mirrorlist_age_days};
 use crate::helpers::package_updates::get_package_updates;
 use crate::helpers::pacman_ignore::{
     add_to_ignore_pkg, is_in_managed_ignore_pkg, list_managed_ignores, remove_from_ignore_pkg,
 };
 use crate::helpers::release_notes::release_notes_url;
-use crate::helpers::settings::load_settings;
+use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::{kick_tray, trigger_check_service};
 use crate::helpers::tray_state::{build_tray_state, write_tray_state};
 use crate::helpers::unselected_packages::load_unselected_packages;
@@ -29,7 +30,7 @@ use crate::ui::package_list::{
 };
 use crate::ui::post_update_page::create_post_update_page;
 use crate::ui::settings_dialog::show_settings_dialog;
-use crate::ui::terminal_page::create_terminal_page;
+use crate::ui::terminal_page::{create_terminal_page, run_command_in_dialog};
 use crate::ui::toolbar::create_toolbar;
 use crate::ui::vulnerabilities_dialog::show_vulnerabilities_dialog;
 use gio::ListStore;
@@ -170,6 +171,113 @@ fn start_initial_load(stack: Stack, content_box: GtkBox, window: ApplicationWind
     });
 }
 
+fn build_mirror_banner(window: &ApplicationWindow) -> GtkBox {
+    install_mirror_banner_css();
+
+    let banner = GtkBox::new(Orientation::Horizontal, 12);
+    banner.add_css_class("mirror-banner");
+    banner.set_margin_start(12);
+    banner.set_margin_end(12);
+    banner.set_margin_top(8);
+
+    let command = mirror_refresh_command();
+    let enabled = load_settings().enable_mirror_refresh;
+    banner.set_visible(enabled && is_mirrorlist_stale() && command.is_some());
+
+    let icon = gtk4::Image::from_icon_name("network-server-symbolic");
+    icon.set_pixel_size(20);
+    icon.set_valign(gtk4::Align::Center);
+    banner.append(&icon);
+
+    let text_box = GtkBox::new(Orientation::Vertical, 2);
+    text_box.set_hexpand(true);
+    text_box.set_valign(gtk4::Align::Center);
+
+    let title = gtk4::Label::new(Some("Your mirror list may be out of date"));
+    title.add_css_class("heading");
+    title.set_xalign(0.0);
+    text_box.append(&title);
+
+    let age = mirrorlist_age_days().unwrap_or(0);
+    let body = gtk4::Label::new(Some(&format!(
+        "It was last updated {} days ago. Refreshing it can make downloads faster.",
+        age
+    )));
+    body.add_css_class("dim-label");
+    body.add_css_class("caption");
+    body.set_xalign(0.0);
+    body.set_wrap(true);
+    text_box.append(&body);
+
+    banner.append(&text_box);
+
+    let refresh_button = Button::with_label("Refresh mirrors");
+    refresh_button.add_css_class("suggested-action");
+    refresh_button.set_valign(gtk4::Align::Center);
+
+    let banner_for_refresh = banner.clone();
+    let window_for_refresh = window.clone();
+    refresh_button.connect_clicked(move |_| {
+        let Some(command) = mirror_refresh_command() else {
+            return;
+        };
+        log_info!("mirror banner: Refresh mirrors clicked");
+        let banner = banner_for_refresh.clone();
+        run_command_in_dialog(
+            window_for_refresh.upcast_ref::<gtk4::Window>(),
+            &command,
+            move || {
+                banner.set_visible(false);
+            },
+        );
+    });
+    banner.append(&refresh_button);
+
+    let close_button = Button::from_icon_name("window-close-symbolic");
+    close_button.add_css_class("flat");
+    close_button.set_valign(gtk4::Align::Center);
+    close_button.set_tooltip_text(Some("Dismiss"));
+
+    let banner_for_close = banner.clone();
+    close_button.connect_clicked(move |_| {
+        log_info!("mirror banner: dismissed");
+        let mut settings = load_settings();
+        settings.enable_mirror_refresh = false;
+        let _ = save_settings(&settings);
+        banner_for_close.set_visible(false);
+    });
+    banner.append(&close_button);
+
+    return banner;
+}
+
+fn install_mirror_banner_css() {
+    use std::sync::OnceLock;
+    static CSS_INSTALLED: OnceLock<()> = OnceLock::new();
+
+    CSS_INSTALLED.get_or_init(|| {
+        let Some(display) = gtk4::gdk::Display::default() else {
+            return;
+        };
+
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_data(
+            ".mirror-banner {
+                background-color: alpha(currentColor, 0.05);
+                border: 1px solid alpha(currentColor, 0.1);
+                border-radius: 12px;
+                padding: 8px 12px;
+            }",
+        );
+
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
+}
+
 fn create_main_content(
     decorations_disabled: bool,
     stack: &Stack,
@@ -183,6 +291,9 @@ fn create_main_content(
 
     let separator = Separator::new(Orientation::Horizontal);
     content_box.append(&separator);
+
+    let mirror_banner = build_mirror_banner(window);
+    content_box.append(&mirror_banner);
 
     let paned = Paned::new(Orientation::Vertical);
 

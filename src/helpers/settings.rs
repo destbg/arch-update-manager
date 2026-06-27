@@ -46,6 +46,7 @@ fn default_settings() -> AppSettings {
         min_update_age_aur_only: false,
         log_retention_days: 7,
         check_arch_news: true,
+        enable_mirror_refresh: true,
     };
 }
 

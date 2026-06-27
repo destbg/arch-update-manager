@@ -61,6 +61,7 @@ pub fn show_settings_dialog(
     let general_container = build_tab_container();
     let snapshot_group = create_snapshot_group(settings, &general_container);
     let news_check = create_news_group(settings, &general_container);
+    let mirror_refresh_check = create_mirror_group(settings, &general_container);
     let remember_unselected_check = create_remember_unselected_group(settings, &general_container);
     let (
         system_tray_check,
@@ -124,6 +125,7 @@ pub fn show_settings_dialog(
         let repo_checkboxes = repo_checkboxes.clone();
         let remember_unselected_check = remember_unselected_check.clone();
         let news_check = news_check.clone();
+        let mirror_refresh_check = mirror_refresh_check.clone();
         let post_update_check = post_update_check.clone();
         let flatpak_enable_check = flatpak_enable_check.clone();
         let keep_old_spin = keep_old_spin.clone();
@@ -192,6 +194,7 @@ pub fn show_settings_dialog(
 
             new_settings.remember_unselected_packages = remember_unselected_check.is_active();
             new_settings.check_arch_news = news_check.is_active();
+            new_settings.enable_mirror_refresh = mirror_refresh_check.is_active();
             new_settings.run_post_update_checks = post_update_check.is_active();
             new_settings.enable_flatpak_support = flatpak_enable_check.is_active();
             new_settings.keep_old_packages = keep_old_spin.value() as u32;
@@ -1124,6 +1127,22 @@ fn create_packages_group(
     main_container.append(&section);
 
     return (enable_check, repo_checkboxes);
+}
+
+fn create_mirror_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "Mirror List",
+        "Show a banner that offers to refresh the pacman mirror list when it gets old.",
+    );
+
+    let check = gtk4::CheckButton::with_label("Offer to refresh the mirror list");
+    check.add_css_class("settings-check");
+    check.set_active(settings.enable_mirror_refresh);
+
+    section.append(&check);
+    main_container.append(&section);
+
+    return check;
 }
 
 fn create_news_group(settings: &AppSettings, main_container: &gtk4::Box) -> gtk4::CheckButton {

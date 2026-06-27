@@ -82,6 +82,8 @@ pub struct AppSettings {
     pub log_retention_days: u32,
     #[serde(default = "default_check_arch_news")]
     pub check_arch_news: bool,
+    #[serde(default = "default_enable_mirror_refresh")]
+    pub enable_mirror_refresh: bool,
 }
 
 impl AppSettings {
@@ -149,5 +151,9 @@ fn default_log_retention_days() -> u32 {
 }
 
 fn default_check_arch_news() -> bool {
+    return true;
+}
+
+fn default_enable_mirror_refresh() -> bool {
     return true;
 }
