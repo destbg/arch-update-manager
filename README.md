@@ -26,7 +26,7 @@ makepkg -si
 ```
 Or using the AUR
 ```bash
-yay arch-update-manager
+paru arch-update-manager
 ```
 
 There are three AUR packages:
