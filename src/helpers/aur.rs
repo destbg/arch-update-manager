@@ -126,6 +126,36 @@ pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
     return Ok(updates);
 }
 
+pub fn rebuild_aur_packages(packages: Vec<String>) -> Result<Vec<String>> {
+    let Some(helper) = detect_aur_helper() else {
+        return Err(anyhow::anyhow!(
+            "No AUR helper available to rebuild packages"
+        ));
+    };
+
+    let mut args = helper.rebuild_args().to_vec();
+    for package in &packages {
+        args.push(package);
+    }
+
+    let original_user = get_original_user();
+
+    if let Some(user) = original_user {
+        let mut command_parts = vec![
+            "sudo".to_string(),
+            "-u".to_string(),
+            user,
+            helper.command().to_string(),
+        ];
+        command_parts.extend(args.into_iter().map(|s| s.to_string()));
+        return Ok(command_parts);
+    } else {
+        let mut command_parts = vec![helper.command().to_string()];
+        command_parts.extend(args.into_iter().map(|s| s.to_string()));
+        return Ok(command_parts);
+    }
+}
+
 pub(crate) fn url_encode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {

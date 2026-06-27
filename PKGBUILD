@@ -15,7 +15,8 @@ optdepends=('paru: AUR helper support'
             'meld: visual diff editor for pacnew files'
             'timeshift: pre-update system snapshots'
             'snapper: pre-update Btrfs snapshots'
-            'aur-scanner: scan AUR packages for security issues')
+            'aur-scanner: scan AUR packages for security issues'
+            'rebuild-detector: find AUR packages that need a rebuild after updates')
 source=("git+$url.git#tag=${pkgver}")
 sha256sums=('SKIP')
 

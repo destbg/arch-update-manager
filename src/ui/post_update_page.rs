@@ -8,11 +8,13 @@ use shlex::try_quote;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::helpers::aur::rebuild_aur_packages;
 use crate::helpers::elevated::spawn_as_user_or_root;
 use crate::helpers::flatpak::{build_flatpak_uninstall_command, get_unused_flatpak_runtimes};
 use crate::helpers::post_update::{
-    clean_cache, get_cache_candidates, get_orphan_packages, get_pacnew_files,
-    get_services_needing_restart, is_kernel_reboot_pending, is_meld_available, restart_service,
+    clean_cache, get_aur_rebuild_packages, get_cache_candidates, get_orphan_packages,
+    get_pacnew_files, get_services_needing_restart, is_kernel_reboot_pending, is_meld_available,
+    restart_service,
 };
 use crate::helpers::repo_switches::detect_repo_switches;
 use crate::helpers::settings::load_settings;
@@ -135,151 +137,9 @@ pub fn refresh_all_clear(page: &PostUpdatePage) {
         || visibility.pacnew
         || visibility.services
         || visibility.flatpak_unused
-        || visibility.resolutions;
+        || visibility.resolutions
+        || visibility.aur_rebuild;
     page.all_clear_box.set_visible(!any_visible);
-}
-
-fn build_loading_box() -> GtkBox {
-    let outer = GtkBox::new(Orientation::Vertical, 12);
-    outer.set_halign(Align::Center);
-    outer.set_valign(Align::Center);
-    outer.set_margin_top(48);
-    outer.set_margin_bottom(48);
-
-    let spinner = Spinner::new();
-    spinner.set_size_request(40, 40);
-    spinner.set_widget_name("post-update-spinner");
-    outer.append(&spinner);
-
-    let label = Label::new(Some("Running post-update checks..."));
-    label.add_css_class("dim-label");
-    outer.append(&label);
-
-    outer.set_visible(false);
-
-    return outer;
-}
-
-fn start_loading_spinner(loading_box: &GtkBox) {
-    let mut child = loading_box.first_child();
-    while let Some(widget) = child {
-        if let Some(spinner) = widget.downcast_ref::<Spinner>() {
-            spinner.set_spinning(true);
-            return;
-        }
-        child = widget.next_sibling();
-    }
-}
-
-fn stop_loading_spinner(loading_box: &GtkBox) {
-    let mut child = loading_box.first_child();
-    while let Some(widget) = child {
-        if let Some(spinner) = widget.downcast_ref::<Spinner>() {
-            spinner.set_spinning(false);
-            return;
-        }
-        child = widget.next_sibling();
-    }
-}
-
-fn build_reboot_banner() -> GtkBox {
-    let banner = GtkBox::new(Orientation::Horizontal, 12);
-    banner.add_css_class("reboot-banner");
-    banner.set_margin_start(12);
-    banner.set_margin_end(12);
-    banner.set_margin_top(12);
-
-    let icon = Image::from_icon_name("system-reboot-symbolic");
-    icon.set_pixel_size(24);
-    banner.append(&icon);
-
-    let text_box = GtkBox::new(Orientation::Vertical, 2);
-    text_box.set_hexpand(true);
-
-    let title = Label::new(Some("A reboot is required"));
-    title.add_css_class("heading");
-    title.set_xalign(0.0);
-    text_box.append(&title);
-
-    let body = Label::new(Some(
-        "A new kernel was installed. Restart your system to finish applying the update.",
-    ));
-    body.add_css_class("dim-label");
-    body.set_xalign(0.0);
-    body.set_wrap(true);
-    text_box.append(&body);
-
-    banner.append(&text_box);
-
-    let reboot_button = Button::with_label("Reboot now");
-    reboot_button.add_css_class("destructive-action");
-    reboot_button.set_valign(Align::Center);
-    reboot_button.connect_clicked(|button| {
-        log_info!("post-update: Reboot now clicked");
-        let parent = button.root().and_downcast::<gtk4::Window>();
-        prompt_reboot(parent.as_ref());
-    });
-    banner.append(&reboot_button);
-
-    banner.set_visible(false);
-
-    return banner;
-}
-
-fn prompt_reboot(parent: Option<&gtk4::Window>) {
-    let dialog = gtk4::MessageDialog::builder()
-        .modal(true)
-        .message_type(gtk4::MessageType::Question)
-        .text("Reboot now?")
-        .secondary_text("Your system will restart immediately. Save your work first.")
-        .build();
-
-    if let Some(window) = parent {
-        dialog.set_transient_for(Some(window));
-    }
-
-    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
-    dialog.add_button("Reboot", gtk4::ResponseType::Accept);
-
-    dialog.connect_response(|dialog, response| {
-        if response == gtk4::ResponseType::Accept {
-            let _ = std::process::Command::new("systemctl")
-                .arg("reboot")
-                .spawn();
-        }
-        dialog.close();
-    });
-
-    dialog.show();
-}
-
-fn build_all_clear_box() -> GtkBox {
-    let outer = GtkBox::new(Orientation::Horizontal, 12);
-    outer.set_halign(Align::Center);
-    outer.set_margin_top(24);
-    outer.set_margin_bottom(24);
-
-    let icon = Image::from_icon_name("object-select-symbolic");
-    icon.set_pixel_size(64);
-    icon.add_css_class("success");
-    outer.append(&icon);
-
-    let text_box = GtkBox::new(Orientation::Vertical, 4);
-    text_box.set_valign(Align::Center);
-
-    let title = Label::new(Some("All post-update checks passed"));
-    title.add_css_class("title-3");
-    title.set_xalign(0.0);
-    text_box.append(&title);
-
-    let subtitle = Label::new(Some("Your system is fully up to date."));
-    subtitle.add_css_class("dim-label");
-    subtitle.set_xalign(0.0);
-    text_box.append(&subtitle);
-
-    outer.append(&text_box);
-
-    return outer;
 }
 
 pub fn build_section_box(title: &str) -> Section {
@@ -299,40 +159,6 @@ pub fn build_section_box(title: &str) -> Section {
     wrapper.append(&card);
 
     return Section { wrapper, card };
-}
-
-fn install_post_update_css() {
-    use std::sync::OnceLock;
-    static CSS_INSTALLED: OnceLock<()> = OnceLock::new();
-
-    CSS_INSTALLED.get_or_init(|| {
-        let Some(display) = gtk4::gdk::Display::default() else {
-            return;
-        };
-
-        let provider = gtk4::CssProvider::new();
-        provider.load_from_data(
-            ".post-update-card {
-                background-color: alpha(currentColor, 0.05);
-                border: 1px solid alpha(currentColor, 0.1);
-                border-radius: 12px;
-                padding: 14px;
-            }
-            .post-update-card list.boxed-list {
-                background-color: transparent;
-                border: none;
-            }
-            .post-update-card list.boxed-list > row {
-                background-color: transparent;
-            }",
-        );
-
-        gtk4::style_context_add_provider_for_display(
-            &display,
-            &provider,
-            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-    });
 }
 
 pub fn set_orphans_section(
@@ -431,18 +257,163 @@ pub fn set_orphans_section(
     refresh_all_clear(page);
 }
 
-fn run_orphan_removal(window: &ApplicationWindow, packages: Vec<String>) {
-    let quoted: Vec<String> = packages
-        .iter()
-        .filter_map(|p| try_quote(p).ok().map(|c| c.into_owned()))
-        .collect();
-
-    if quoted.is_empty() {
+pub fn set_aur_rebuild_section(
+    page: &PostUpdatePage,
+    packages: Vec<String>,
+    window: &ApplicationWindow,
+) {
+    if packages.is_empty() {
         return;
     }
 
-    let command = format!("sudo pacman -Rns {}", quoted.join(" "));
-    run_post_update_command(window, &command);
+    let title = format!("Rebuild needed ({})", packages.len());
+    let section = build_section_box(&title);
+
+    let caption = Label::new(Some(
+        "These AUR packages link to libraries that changed in this update. Rebuild them so they keep working.",
+    ));
+    caption.add_css_class("dim-label");
+    caption.set_xalign(0.0);
+    caption.set_wrap(true);
+    section.card.append(&caption);
+
+    let list_box = ListBox::new();
+    list_box.set_selection_mode(SelectionMode::None);
+    list_box.add_css_class("boxed-list");
+
+    let checkboxes: Rc<RefCell<Vec<(String, CheckButton)>>> = Rc::new(RefCell::new(Vec::new()));
+
+    for pkg in &packages {
+        let row = ListBoxRow::new();
+        row.set_activatable(false);
+        row.set_selectable(false);
+
+        let row_box = GtkBox::new(Orientation::Horizontal, 12);
+        row_box.set_margin_start(12);
+        row_box.set_margin_end(12);
+        row_box.set_margin_top(8);
+        row_box.set_margin_bottom(8);
+
+        let check = CheckButton::new();
+        check.set_active(true);
+        check.set_valign(Align::Center);
+        row_box.append(&check);
+
+        let name_label = Label::new(Some(pkg));
+        name_label.set_xalign(0.0);
+        name_label.set_hexpand(true);
+        row_box.append(&name_label);
+
+        row.set_child(Some(&row_box));
+        list_box.append(&row);
+
+        checkboxes.borrow_mut().push((pkg.clone(), check));
+    }
+
+    section.card.append(&list_box);
+
+    let button_row = GtkBox::new(Orientation::Horizontal, 0);
+    button_row.set_halign(Align::End);
+    button_row.set_margin_top(4);
+
+    let rebuild_btn = Button::with_label("Rebuild selected");
+    rebuild_btn.add_css_class("suggested-action");
+    button_row.append(&rebuild_btn);
+
+    section.card.append(&button_row);
+
+    let checkboxes_clone = checkboxes.clone();
+    let window_clone = window.clone();
+    rebuild_btn.connect_clicked(move |_| {
+        let selected: Vec<String> = checkboxes_clone
+            .borrow()
+            .iter()
+            .filter(|(_, c)| c.is_active())
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        log_info!(
+            "post-update: Rebuild AUR clicked ({} selected)",
+            selected.len()
+        );
+        if selected.is_empty() {
+            return;
+        }
+
+        run_aur_rebuild(&window_clone, selected);
+    });
+
+    page.sections_box.append(&section.wrapper);
+    page.section_visibility.borrow_mut().aur_rebuild = true;
+    refresh_all_clear(page);
+}
+
+pub fn set_services_section(page: &PostUpdatePage, services: Vec<String>) {
+    if services.is_empty() {
+        return;
+    }
+
+    let title = if services.len() == 1 {
+        "Services that need restart (1)".to_string()
+    } else {
+        format!("Services that need restart ({})", services.len())
+    };
+
+    let section = build_section_box(&title);
+
+    let caption = Label::new(Some(
+        "These running services use files from packages that were just updated. A restart is needed to pick up the new versions.",
+    ));
+    caption.add_css_class("dim-label");
+    caption.set_xalign(0.0);
+    caption.set_wrap(true);
+    section.card.append(&caption);
+
+    let list_box = ListBox::new();
+    list_box.set_selection_mode(SelectionMode::None);
+    list_box.add_css_class("boxed-list");
+
+    let rows: Rc<RefCell<Vec<ServiceRowState>>> = Rc::new(RefCell::new(Vec::new()));
+
+    for service in &services {
+        let row_state = build_service_row(service);
+        list_box.append(&row_state.row);
+        rows.borrow_mut().push(row_state);
+    }
+
+    section.card.append(&list_box);
+
+    let button_row = GtkBox::new(Orientation::Horizontal, 0);
+    button_row.set_halign(Align::End);
+    button_row.set_margin_top(4);
+
+    let restart_btn = Button::with_label("Restart selected");
+    restart_btn.add_css_class("suggested-action");
+    button_row.append(&restart_btn);
+
+    section.card.append(&button_row);
+
+    let rows_clone = rows.clone();
+    let restart_btn_clone = restart_btn.clone();
+    restart_btn.connect_clicked(move |_| {
+        log_info!("post-update: Restart services clicked");
+        restart_btn_clone.set_sensitive(false);
+        let to_restart: Vec<usize> = rows_clone
+            .borrow()
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.check.is_active())
+            .map(|(i, _)| i)
+            .collect();
+
+        for index in to_restart {
+            kick_off_service_restart(rows_clone.clone(), index);
+        }
+    });
+
+    page.sections_box.append(&section.wrapper);
+    page.section_visibility.borrow_mut().services = true;
+    refresh_all_clear(page);
 }
 
 pub fn run_post_update_command(window: &ApplicationWindow, command: &str) {
@@ -516,71 +487,6 @@ pub fn set_pacnew_section(page: &PostUpdatePage, files: Vec<String>, window: &Ap
     page.sections_box.append(&section.wrapper);
     page.section_visibility.borrow_mut().pacnew = true;
     refresh_all_clear(page);
-}
-
-fn build_pacnew_row(
-    file_path: &str,
-    meld_available: bool,
-    window: &ApplicationWindow,
-) -> ListBoxRow {
-    let _ = window;
-
-    let row = ListBoxRow::new();
-    row.set_activatable(false);
-    row.set_selectable(false);
-
-    let row_box = GtkBox::new(Orientation::Horizontal, 12);
-    row_box.set_margin_start(12);
-    row_box.set_margin_end(12);
-    row_box.set_margin_top(8);
-    row_box.set_margin_bottom(8);
-
-    let path_label = Label::new(Some(file_path));
-    path_label.set_xalign(0.0);
-    path_label.set_hexpand(true);
-    path_label.set_wrap(true);
-    path_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
-    row_box.append(&path_label);
-
-    let diff_btn = Button::with_label("Diff");
-    diff_btn.add_css_class("suggested-action");
-    let path_for_diff = file_path.to_string();
-    diff_btn.connect_clicked(move |btn| {
-        log_info!("post-update: Diff clicked for {}", path_for_diff);
-        let parent = btn.root().and_downcast::<gtk4::Window>();
-        if let Some(parent_window) = parent {
-            show_pacnew_diff_dialog(&parent_window, &path_for_diff);
-        }
-    });
-    row_box.append(&diff_btn);
-
-    if meld_available {
-        let meld_btn = Button::with_label("Open in meld");
-        meld_btn.add_css_class("flat");
-        let path_owned = file_path.to_string();
-        meld_btn.connect_clicked(move |_| {
-            log_info!("post-update: Open in meld clicked for {}", path_owned);
-            open_meld(&path_owned);
-        });
-        row_box.append(&meld_btn);
-    }
-
-    row.set_child(Some(&row_box));
-    return row;
-}
-
-fn open_meld(saved_path: &str) {
-    let original = strip_pacnew_suffix(saved_path);
-    spawn_as_user_or_root("meld", &[&original, saved_path]);
-}
-
-fn strip_pacnew_suffix(path: &str) -> String {
-    for suffix in [".pacnew", ".pacsave", ".pacorig"] {
-        if let Some(stripped) = path.strip_suffix(suffix) {
-            return stripped.to_string();
-        }
-    }
-    return path.to_string();
 }
 
 pub fn set_flatpak_unused_section(
@@ -805,281 +711,6 @@ pub fn set_resolutions_section(
     refresh_all_clear(page);
 }
 
-fn format_resolution_title(switch: &RepoSwitch) -> String {
-    let escape = |s: &str| glib::markup_escape_text(s).to_string();
-    return match switch.kind {
-        SwitchKind::RepoChange => format!(
-            "<b>{}</b>: {} to {}",
-            escape(&switch.installed_name),
-            escape(&switch.installed_repo),
-            escape(&switch.target_repo),
-        ),
-        SwitchKind::Replace => format!(
-            "<b>{}</b> to <b>{}/{}</b>",
-            escape(&switch.installed_name),
-            escape(&switch.target_repo),
-            escape(&switch.target_name),
-        ),
-    };
-}
-
-fn format_resolution_subtitle(switch: &RepoSwitch) -> String {
-    return match switch.kind {
-        SwitchKind::RepoChange => {
-            if switch.installed_version == switch.target_version {
-                format!("version {} (same)", switch.installed_version)
-            } else {
-                format!(
-                    "version {} to {}",
-                    switch.installed_version, switch.target_version
-                )
-            }
-        }
-        SwitchKind::Replace => format!(
-            "replaces {} ({} to {})",
-            switch.installed_name, switch.installed_version, switch.target_version
-        ),
-    };
-}
-
-pub fn set_services_section(page: &PostUpdatePage, services: Vec<String>) {
-    if services.is_empty() {
-        return;
-    }
-
-    let title = if services.len() == 1 {
-        "Services that need restart (1)".to_string()
-    } else {
-        format!("Services that need restart ({})", services.len())
-    };
-
-    let section = build_section_box(&title);
-
-    let caption = Label::new(Some(
-        "These running services use files from packages that were just updated. A restart is needed to pick up the new versions.",
-    ));
-    caption.add_css_class("dim-label");
-    caption.set_xalign(0.0);
-    caption.set_wrap(true);
-    section.card.append(&caption);
-
-    let list_box = ListBox::new();
-    list_box.set_selection_mode(SelectionMode::None);
-    list_box.add_css_class("boxed-list");
-
-    let rows: Rc<RefCell<Vec<ServiceRowState>>> = Rc::new(RefCell::new(Vec::new()));
-
-    for service in &services {
-        let row_state = build_service_row(service);
-        list_box.append(&row_state.row);
-        rows.borrow_mut().push(row_state);
-    }
-
-    section.card.append(&list_box);
-
-    let button_row = GtkBox::new(Orientation::Horizontal, 0);
-    button_row.set_halign(Align::End);
-    button_row.set_margin_top(4);
-
-    let restart_btn = Button::with_label("Restart selected");
-    restart_btn.add_css_class("suggested-action");
-    button_row.append(&restart_btn);
-
-    section.card.append(&button_row);
-
-    let rows_clone = rows.clone();
-    let restart_btn_clone = restart_btn.clone();
-    restart_btn.connect_clicked(move |_| {
-        log_info!("post-update: Restart services clicked");
-        restart_btn_clone.set_sensitive(false);
-        let to_restart: Vec<usize> = rows_clone
-            .borrow()
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| r.check.is_active())
-            .map(|(i, _)| i)
-            .collect();
-
-        for index in to_restart {
-            kick_off_service_restart(rows_clone.clone(), index);
-        }
-    });
-
-    page.sections_box.append(&section.wrapper);
-    page.section_visibility.borrow_mut().services = true;
-    refresh_all_clear(page);
-}
-
-fn build_service_row(service: &str) -> ServiceRowState {
-    let row = ListBoxRow::new();
-    row.set_activatable(false);
-    row.set_selectable(false);
-
-    let row_box = GtkBox::new(Orientation::Horizontal, 12);
-    row_box.set_margin_start(12);
-    row_box.set_margin_end(12);
-    row_box.set_margin_top(8);
-    row_box.set_margin_bottom(8);
-
-    let check = CheckButton::new();
-    check.set_active(true);
-    check.set_valign(Align::Center);
-    row_box.append(&check);
-
-    let name_label = Label::new(Some(service));
-    name_label.set_xalign(0.0);
-    name_label.set_hexpand(true);
-    row_box.append(&name_label);
-
-    let status_box = GtkBox::new(Orientation::Horizontal, 6);
-    status_box.set_valign(Align::Center);
-    row_box.append(&status_box);
-
-    row.set_child(Some(&row_box));
-
-    return ServiceRowState {
-        row,
-        name: service.to_string(),
-        check,
-        status_box,
-    };
-}
-
-fn kick_off_service_restart(rows: Rc<RefCell<Vec<ServiceRowState>>>, index: usize) {
-    let service_name;
-    {
-        let rows_borrow = rows.borrow();
-        let Some(row) = rows_borrow.get(index) else {
-            return;
-        };
-        row.check.set_sensitive(false);
-        clear_box(&row.status_box);
-        let spinner = Spinner::new();
-        spinner.set_spinning(true);
-        spinner.set_size_request(16, 16);
-        row.status_box.append(&spinner);
-        service_name = row.name.clone();
-    }
-
-    glib::spawn_future_local(async move {
-        let outcome = gio::spawn_blocking(move || restart_service(&service_name)).await;
-
-        let outcome = match outcome {
-            Ok(o) => o,
-            Err(e) => ServiceRestartOutcome {
-                success: false,
-                exit_code: None,
-                stdout: String::new(),
-                stderr: format!("Restart task failed: {:?}", e),
-            },
-        };
-
-        let rows_borrow = rows.borrow();
-        let Some(row) = rows_borrow.get(index) else {
-            return;
-        };
-
-        clear_box(&row.status_box);
-
-        if outcome.success {
-            let icon = Image::from_icon_name("object-select-symbolic");
-            icon.add_css_class("success");
-            row.status_box.append(&icon);
-
-            let done = Label::new(Some("Done"));
-            done.add_css_class("dim-label");
-            row.status_box.append(&done);
-        } else {
-            let icon = Image::from_icon_name("dialog-error-symbolic");
-            icon.add_css_class("error");
-            row.status_box.append(&icon);
-
-            let error_btn = Button::with_label("Error");
-            error_btn.add_css_class("flat");
-            let error_text = format_service_error(&outcome);
-            let row_name = row.name.clone();
-            error_btn.connect_clicked(move |btn| {
-                let parent = btn.root().and_downcast::<gtk4::Window>();
-                show_service_error_dialog(parent.as_ref(), &row_name, &error_text);
-            });
-            row.status_box.append(&error_btn);
-        }
-    });
-}
-
-fn clear_box(container: &GtkBox) {
-    let mut child = container.first_child();
-    while let Some(widget) = child {
-        let next = widget.next_sibling();
-        container.remove(&widget);
-        child = next;
-    }
-}
-
-fn format_service_error(outcome: &ServiceRestartOutcome) -> String {
-    let mut out = String::new();
-
-    if let Some(code) = outcome.exit_code {
-        out.push_str(&format!("Exit code: {}\n", code));
-    } else {
-        out.push_str("Exit code: unknown\n");
-    }
-
-    if !outcome.stdout.trim().is_empty() {
-        out.push_str("\nStandard output:\n");
-        out.push_str(&outcome.stdout);
-    }
-
-    if !outcome.stderr.trim().is_empty() {
-        out.push_str("\nStandard error:\n");
-        out.push_str(&outcome.stderr);
-    }
-
-    return out;
-}
-
-fn show_service_error_dialog(parent: Option<&gtk4::Window>, service_name: &str, content: &str) {
-    let dialog = gtk4::Dialog::builder()
-        .title(&format!("Error restarting {}", service_name))
-        .modal(true)
-        .default_width(540)
-        .default_height(360)
-        .build();
-
-    if let Some(window) = parent {
-        dialog.set_transient_for(Some(window));
-    }
-
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
-    content_area.set_vexpand(true);
-
-    let scrolled = ScrolledWindow::builder()
-        .vexpand(true)
-        .hexpand(true)
-        .hscrollbar_policy(gtk4::PolicyType::Automatic)
-        .vscrollbar_policy(gtk4::PolicyType::Automatic)
-        .build();
-
-    let text = gtk4::TextView::new();
-    text.set_editable(false);
-    text.set_cursor_visible(false);
-    text.set_monospace(true);
-    text.set_top_margin(12);
-    text.set_bottom_margin(12);
-    text.set_left_margin(12);
-    text.set_right_margin(12);
-    text.buffer().set_text(content);
-
-    scrolled.set_child(Some(&text));
-    content_area.append(&scrolled);
-
-    dialog.add_button("Close", gtk4::ResponseType::Close);
-    dialog.connect_response(|d, _| d.close());
-
-    dialog.show();
-}
-
 pub fn set_cache_section(
     page: &PostUpdatePage,
     candidates: CacheCandidates,
@@ -1288,6 +919,19 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
             Vec::new()
         };
 
+        let rebuild_result = gio::spawn_blocking(|| get_aur_rebuild_packages()).await;
+        let aur_rebuild = match rebuild_result {
+            Ok(Ok(list)) => list,
+            Ok(Err(e)) => {
+                eprintln!("Failed to detect AUR packages needing rebuild: {}", e);
+                Vec::new()
+            }
+            Err(e) => {
+                eprintln!("AUR rebuild detection thread failed: {:?}", e);
+                Vec::new()
+            }
+        };
+
         POST_UPDATE_PAGE.with(|cell| {
             if let Some(page) = cell.borrow().as_ref() {
                 set_orphans_section(page, orphans, &window);
@@ -1296,9 +940,495 @@ pub fn run_post_update_detections(window: ApplicationWindow) {
                 set_services_section(page, services);
                 set_flatpak_unused_section(page, flatpak_unused, &window);
                 set_resolutions_section(page, switches, &window);
+                set_aur_rebuild_section(page, aur_rebuild, &window);
                 page.reboot_banner.set_visible(reboot_pending);
                 finish_post_update_loading(page);
             }
         });
     });
+}
+
+fn build_loading_box() -> GtkBox {
+    let outer = GtkBox::new(Orientation::Vertical, 12);
+    outer.set_halign(Align::Center);
+    outer.set_valign(Align::Center);
+    outer.set_margin_top(48);
+    outer.set_margin_bottom(48);
+
+    let spinner = Spinner::new();
+    spinner.set_size_request(40, 40);
+    spinner.set_widget_name("post-update-spinner");
+    outer.append(&spinner);
+
+    let label = Label::new(Some("Running post-update checks..."));
+    label.add_css_class("dim-label");
+    outer.append(&label);
+
+    outer.set_visible(false);
+
+    return outer;
+}
+
+fn start_loading_spinner(loading_box: &GtkBox) {
+    let mut child = loading_box.first_child();
+    while let Some(widget) = child {
+        if let Some(spinner) = widget.downcast_ref::<Spinner>() {
+            spinner.set_spinning(true);
+            return;
+        }
+        child = widget.next_sibling();
+    }
+}
+
+fn stop_loading_spinner(loading_box: &GtkBox) {
+    let mut child = loading_box.first_child();
+    while let Some(widget) = child {
+        if let Some(spinner) = widget.downcast_ref::<Spinner>() {
+            spinner.set_spinning(false);
+            return;
+        }
+        child = widget.next_sibling();
+    }
+}
+
+fn build_reboot_banner() -> GtkBox {
+    let banner = GtkBox::new(Orientation::Horizontal, 12);
+    banner.add_css_class("reboot-banner");
+    banner.set_margin_start(12);
+    banner.set_margin_end(12);
+    banner.set_margin_top(12);
+
+    let icon = Image::from_icon_name("system-reboot-symbolic");
+    icon.set_pixel_size(24);
+    banner.append(&icon);
+
+    let text_box = GtkBox::new(Orientation::Vertical, 2);
+    text_box.set_hexpand(true);
+
+    let title = Label::new(Some("A reboot is required"));
+    title.add_css_class("heading");
+    title.set_xalign(0.0);
+    text_box.append(&title);
+
+    let body = Label::new(Some(
+        "A new kernel was installed. Restart your system to finish applying the update.",
+    ));
+    body.add_css_class("dim-label");
+    body.set_xalign(0.0);
+    body.set_wrap(true);
+    text_box.append(&body);
+
+    banner.append(&text_box);
+
+    let reboot_button = Button::with_label("Reboot now");
+    reboot_button.add_css_class("destructive-action");
+    reboot_button.set_valign(Align::Center);
+    reboot_button.connect_clicked(|button| {
+        log_info!("post-update: Reboot now clicked");
+        let parent = button.root().and_downcast::<gtk4::Window>();
+        prompt_reboot(parent.as_ref());
+    });
+    banner.append(&reboot_button);
+
+    banner.set_visible(false);
+
+    return banner;
+}
+
+fn prompt_reboot(parent: Option<&gtk4::Window>) {
+    let dialog = gtk4::MessageDialog::builder()
+        .modal(true)
+        .message_type(gtk4::MessageType::Question)
+        .text("Reboot now?")
+        .secondary_text("Your system will restart immediately. Save your work first.")
+        .build();
+
+    if let Some(window) = parent {
+        dialog.set_transient_for(Some(window));
+    }
+
+    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
+    dialog.add_button("Reboot", gtk4::ResponseType::Accept);
+
+    dialog.connect_response(|dialog, response| {
+        if response == gtk4::ResponseType::Accept {
+            let _ = std::process::Command::new("systemctl")
+                .arg("reboot")
+                .spawn();
+        }
+        dialog.close();
+    });
+
+    dialog.show();
+}
+
+fn build_all_clear_box() -> GtkBox {
+    let outer = GtkBox::new(Orientation::Horizontal, 12);
+    outer.set_halign(Align::Center);
+    outer.set_margin_top(24);
+    outer.set_margin_bottom(24);
+
+    let icon = Image::from_icon_name("object-select-symbolic");
+    icon.set_pixel_size(64);
+    icon.add_css_class("success");
+    outer.append(&icon);
+
+    let text_box = GtkBox::new(Orientation::Vertical, 4);
+    text_box.set_valign(Align::Center);
+
+    let title = Label::new(Some("All post-update checks passed"));
+    title.add_css_class("title-3");
+    title.set_xalign(0.0);
+    text_box.append(&title);
+
+    let subtitle = Label::new(Some("Your system is fully up to date."));
+    subtitle.add_css_class("dim-label");
+    subtitle.set_xalign(0.0);
+    text_box.append(&subtitle);
+
+    outer.append(&text_box);
+
+    return outer;
+}
+
+fn install_post_update_css() {
+    use std::sync::OnceLock;
+    static CSS_INSTALLED: OnceLock<()> = OnceLock::new();
+
+    CSS_INSTALLED.get_or_init(|| {
+        let Some(display) = gtk4::gdk::Display::default() else {
+            return;
+        };
+
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_data(
+            ".post-update-card {
+                background-color: alpha(currentColor, 0.05);
+                border: 1px solid alpha(currentColor, 0.1);
+                border-radius: 12px;
+                padding: 14px;
+            }
+            .post-update-card list.boxed-list {
+                background-color: transparent;
+                border: none;
+            }
+            .post-update-card list.boxed-list > row {
+                background-color: transparent;
+            }",
+        );
+
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
+}
+
+fn run_orphan_removal(window: &ApplicationWindow, packages: Vec<String>) {
+    let quoted: Vec<String> = packages
+        .iter()
+        .filter_map(|p| try_quote(p).ok().map(|c| c.into_owned()))
+        .collect();
+
+    if quoted.is_empty() {
+        return;
+    }
+
+    let command = format!("sudo pacman -Rns {}", quoted.join(" "));
+    run_post_update_command(window, &command);
+}
+
+fn run_aur_rebuild(window: &ApplicationWindow, packages: Vec<String>) {
+    let parts = match rebuild_aur_packages(packages) {
+        Ok(parts) => parts,
+        Err(e) => {
+            eprintln!("Failed to build AUR rebuild command: {}", e);
+            return;
+        }
+    };
+
+    let command = parts
+        .iter()
+        .filter_map(|p| try_quote(p).ok().map(|c| c.into_owned()))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if command.is_empty() {
+        return;
+    }
+
+    run_post_update_command(window, &command);
+}
+
+fn build_pacnew_row(
+    file_path: &str,
+    meld_available: bool,
+    window: &ApplicationWindow,
+) -> ListBoxRow {
+    let _ = window;
+
+    let row = ListBoxRow::new();
+    row.set_activatable(false);
+    row.set_selectable(false);
+
+    let row_box = GtkBox::new(Orientation::Horizontal, 12);
+    row_box.set_margin_start(12);
+    row_box.set_margin_end(12);
+    row_box.set_margin_top(8);
+    row_box.set_margin_bottom(8);
+
+    let path_label = Label::new(Some(file_path));
+    path_label.set_xalign(0.0);
+    path_label.set_hexpand(true);
+    path_label.set_wrap(true);
+    path_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
+    row_box.append(&path_label);
+
+    let diff_btn = Button::with_label("Diff");
+    diff_btn.add_css_class("suggested-action");
+    let path_for_diff = file_path.to_string();
+    diff_btn.connect_clicked(move |btn| {
+        log_info!("post-update: Diff clicked for {}", path_for_diff);
+        let parent = btn.root().and_downcast::<gtk4::Window>();
+        if let Some(parent_window) = parent {
+            show_pacnew_diff_dialog(&parent_window, &path_for_diff);
+        }
+    });
+    row_box.append(&diff_btn);
+
+    if meld_available {
+        let meld_btn = Button::with_label("Open in meld");
+        meld_btn.add_css_class("flat");
+        let path_owned = file_path.to_string();
+        meld_btn.connect_clicked(move |_| {
+            log_info!("post-update: Open in meld clicked for {}", path_owned);
+            open_meld(&path_owned);
+        });
+        row_box.append(&meld_btn);
+    }
+
+    row.set_child(Some(&row_box));
+    return row;
+}
+
+fn open_meld(saved_path: &str) {
+    let original = strip_pacnew_suffix(saved_path);
+    spawn_as_user_or_root("meld", &[&original, saved_path]);
+}
+
+fn strip_pacnew_suffix(path: &str) -> String {
+    for suffix in [".pacnew", ".pacsave", ".pacorig"] {
+        if let Some(stripped) = path.strip_suffix(suffix) {
+            return stripped.to_string();
+        }
+    }
+    return path.to_string();
+}
+
+fn format_resolution_title(switch: &RepoSwitch) -> String {
+    let escape = |s: &str| glib::markup_escape_text(s).to_string();
+    return match switch.kind {
+        SwitchKind::RepoChange => format!(
+            "<b>{}</b>: {} to {}",
+            escape(&switch.installed_name),
+            escape(&switch.installed_repo),
+            escape(&switch.target_repo),
+        ),
+        SwitchKind::Replace => format!(
+            "<b>{}</b> to <b>{}/{}</b>",
+            escape(&switch.installed_name),
+            escape(&switch.target_repo),
+            escape(&switch.target_name),
+        ),
+    };
+}
+
+fn format_resolution_subtitle(switch: &RepoSwitch) -> String {
+    return match switch.kind {
+        SwitchKind::RepoChange => {
+            if switch.installed_version == switch.target_version {
+                format!("version {} (same)", switch.installed_version)
+            } else {
+                format!(
+                    "version {} to {}",
+                    switch.installed_version, switch.target_version
+                )
+            }
+        }
+        SwitchKind::Replace => format!(
+            "replaces {} ({} to {})",
+            switch.installed_name, switch.installed_version, switch.target_version
+        ),
+    };
+}
+
+fn build_service_row(service: &str) -> ServiceRowState {
+    let row = ListBoxRow::new();
+    row.set_activatable(false);
+    row.set_selectable(false);
+
+    let row_box = GtkBox::new(Orientation::Horizontal, 12);
+    row_box.set_margin_start(12);
+    row_box.set_margin_end(12);
+    row_box.set_margin_top(8);
+    row_box.set_margin_bottom(8);
+
+    let check = CheckButton::new();
+    check.set_active(true);
+    check.set_valign(Align::Center);
+    row_box.append(&check);
+
+    let name_label = Label::new(Some(service));
+    name_label.set_xalign(0.0);
+    name_label.set_hexpand(true);
+    row_box.append(&name_label);
+
+    let status_box = GtkBox::new(Orientation::Horizontal, 6);
+    status_box.set_valign(Align::Center);
+    row_box.append(&status_box);
+
+    row.set_child(Some(&row_box));
+
+    return ServiceRowState {
+        row,
+        name: service.to_string(),
+        check,
+        status_box,
+    };
+}
+
+fn kick_off_service_restart(rows: Rc<RefCell<Vec<ServiceRowState>>>, index: usize) {
+    let service_name;
+    {
+        let rows_borrow = rows.borrow();
+        let Some(row) = rows_borrow.get(index) else {
+            return;
+        };
+        row.check.set_sensitive(false);
+        clear_box(&row.status_box);
+        let spinner = Spinner::new();
+        spinner.set_spinning(true);
+        spinner.set_size_request(16, 16);
+        row.status_box.append(&spinner);
+        service_name = row.name.clone();
+    }
+
+    glib::spawn_future_local(async move {
+        let outcome = gio::spawn_blocking(move || restart_service(&service_name)).await;
+
+        let outcome = match outcome {
+            Ok(o) => o,
+            Err(e) => ServiceRestartOutcome {
+                success: false,
+                exit_code: None,
+                stdout: String::new(),
+                stderr: format!("Restart task failed: {:?}", e),
+            },
+        };
+
+        let rows_borrow = rows.borrow();
+        let Some(row) = rows_borrow.get(index) else {
+            return;
+        };
+
+        clear_box(&row.status_box);
+
+        if outcome.success {
+            let icon = Image::from_icon_name("object-select-symbolic");
+            icon.add_css_class("success");
+            row.status_box.append(&icon);
+
+            let done = Label::new(Some("Done"));
+            done.add_css_class("dim-label");
+            row.status_box.append(&done);
+        } else {
+            let icon = Image::from_icon_name("dialog-error-symbolic");
+            icon.add_css_class("error");
+            row.status_box.append(&icon);
+
+            let error_btn = Button::with_label("Error");
+            error_btn.add_css_class("flat");
+            let error_text = format_service_error(&outcome);
+            let row_name = row.name.clone();
+            error_btn.connect_clicked(move |btn| {
+                let parent = btn.root().and_downcast::<gtk4::Window>();
+                show_service_error_dialog(parent.as_ref(), &row_name, &error_text);
+            });
+            row.status_box.append(&error_btn);
+        }
+    });
+}
+
+fn clear_box(container: &GtkBox) {
+    let mut child = container.first_child();
+    while let Some(widget) = child {
+        let next = widget.next_sibling();
+        container.remove(&widget);
+        child = next;
+    }
+}
+
+fn format_service_error(outcome: &ServiceRestartOutcome) -> String {
+    let mut out = String::new();
+
+    if let Some(code) = outcome.exit_code {
+        out.push_str(&format!("Exit code: {}\n", code));
+    } else {
+        out.push_str("Exit code: unknown\n");
+    }
+
+    if !outcome.stdout.trim().is_empty() {
+        out.push_str("\nStandard output:\n");
+        out.push_str(&outcome.stdout);
+    }
+
+    if !outcome.stderr.trim().is_empty() {
+        out.push_str("\nStandard error:\n");
+        out.push_str(&outcome.stderr);
+    }
+
+    return out;
+}
+
+fn show_service_error_dialog(parent: Option<&gtk4::Window>, service_name: &str, content: &str) {
+    let dialog = gtk4::Dialog::builder()
+        .title(&format!("Error restarting {}", service_name))
+        .modal(true)
+        .default_width(540)
+        .default_height(360)
+        .build();
+
+    if let Some(window) = parent {
+        dialog.set_transient_for(Some(window));
+    }
+
+    let content_area = dialog.content_area();
+    content_area.set_spacing(0);
+    content_area.set_vexpand(true);
+
+    let scrolled = ScrolledWindow::builder()
+        .vexpand(true)
+        .hexpand(true)
+        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .build();
+
+    let text = gtk4::TextView::new();
+    text.set_editable(false);
+    text.set_cursor_visible(false);
+    text.set_monospace(true);
+    text.set_top_margin(12);
+    text.set_bottom_margin(12);
+    text.set_left_margin(12);
+    text.set_right_margin(12);
+    text.buffer().set_text(content);
+
+    scrolled.set_child(Some(&text));
+    content_area.append(&scrolled);
+
+    dialog.add_button("Close", gtk4::ResponseType::Close);
+    dialog.connect_response(|d, _| d.close());
+
+    dialog.show();
 }

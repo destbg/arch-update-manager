@@ -57,6 +57,30 @@ pub fn get_orphan_packages() -> Result<Vec<String>> {
     return Ok(packages);
 }
 
+pub fn get_aur_rebuild_packages() -> Result<Vec<String>> {
+    let output = match Command::new("checkrebuild").output() {
+        Ok(o) => o,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut packages = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        if parts.next() != Some("foreign") {
+            continue;
+        }
+        if let Some(name) = parts.next() {
+            let name = name.to_string();
+            if !name.is_empty() && !packages.contains(&name) {
+                packages.push(name);
+            }
+        }
+    }
+
+    return Ok(packages);
+}
+
 pub fn get_cache_candidates(keep_old: u32, keep_uninstalled: u32) -> Result<CacheCandidates> {
     let mut result = CacheCandidates::default();
     let mut total_bytes: u64 = 0;
