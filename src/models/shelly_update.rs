@@ -2,10 +2,10 @@
 pub struct ShellyUpdate {
     #[serde(rename = "Name")]
     pub name: String,
-    #[serde(rename = "CurrentVersion")]
+    #[serde(rename = "Version")]
     pub current_version: String,
     #[serde(rename = "NewVersion")]
     pub new_version: String,
-    #[serde(rename = "SizeDifference", default)]
-    pub size_difference: i64,
+    #[serde(rename = "DownloadSize", default)]
+    pub download_size: i64,
 }

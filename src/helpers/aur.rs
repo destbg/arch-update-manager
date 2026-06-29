@@ -327,7 +327,7 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             selected: true,
             description: format!("AUR package: {}", e.name),
             url: Some(format!("https://aur.archlinux.org/packages/{}", e.name)),
-            size: e.size_difference.max(0),
+            size: e.download_size.max(0),
             current_version: e.current_version,
             new_version: e.new_version,
             name: e.name,
