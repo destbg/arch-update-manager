@@ -3,10 +3,14 @@ name: Update AUR (git)
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'README.md'
-      - 'showcase.png'
-      - 'release.md'
+    paths:
+      - 'Cargo.*'
+      - 'src/**'
+      - 'res/**'
+      - 'icons/**'
+      - 'PKGBUILD*'
+      - '*.desktop'
+      - 'LICENSE'
   workflow_dispatch:
 
 permissions:
