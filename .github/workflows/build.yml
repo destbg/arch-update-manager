@@ -1,0 +1,21 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel pkgconf rust gtk4 glib2 vte4 gtksourceview5 pacman-contrib
+
+      - name: Build
+        run: |
+          cargo build --release --locked --all-features
