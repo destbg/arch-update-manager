@@ -1,48 +1,29 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Align, ApplicationWindow, Box as GtkBox, Dialog, Label, Orientation, PolicyType, ResponseType,
-    ScrolledWindow, Separator, Spinner,
+    Align, ApplicationWindow, Box as GtkBox, Label, Orientation, PolicyType, ScrolledWindow,
+    Separator, Spinner,
 };
 
 use crate::helpers::elevated::open_url_as_user;
 use crate::helpers::security::get_open_vulnerabilities;
 use crate::log_info;
 use crate::models::open_vulnerability::OpenVulnerability;
+use crate::ui::dialogs::build_dialog_window;
 use crate::ui::package_list::{prefers_dark, severity_color};
 
 pub fn show_vulnerabilities_dialog(parent: &ApplicationWindow) {
     log_info!("vulnerabilities dialog opened");
 
-    let dialog = Dialog::builder()
-        .title("Open Vulnerabilities")
-        .transient_for(parent)
-        .modal(true)
-        .default_width(620)
-        .default_height(460)
-        .build();
-
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
-    content_area.set_vexpand(true);
-    content_area.set_hexpand(true);
+    let (dialog, content_area) = build_dialog_window(parent, "Open Vulnerabilities", 620, 460);
     content_area.append(&build_loading_view());
-
-    dialog.add_button("Close", ResponseType::Close);
-    dialog.connect_response(|d, response| {
-        if response == ResponseType::Close || response == ResponseType::DeleteEvent {
-            d.close();
-        }
-    });
-
     dialog.present();
 
-    let dialog_for_async = dialog.clone();
+    let content_for_async = content_area.clone();
     glib::spawn_future_local(async move {
         let result = gio::spawn_blocking(get_open_vulnerabilities).await;
 
-        let content_area = dialog_for_async.content_area();
-        while let Some(child) = content_area.first_child() {
-            content_area.remove(&child);
+        while let Some(child) = content_for_async.first_child() {
+            content_for_async.remove(&child);
         }
 
         let body = match result {
@@ -54,7 +35,7 @@ pub fn show_vulnerabilities_dialog(parent: &ApplicationWindow) {
                 "Could not load the Arch security tracker data. Check your connection and try again.",
             ),
         };
-        content_area.append(&body);
+        content_for_async.append(&body);
     });
 }
 

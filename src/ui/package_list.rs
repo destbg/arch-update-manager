@@ -12,7 +12,7 @@ use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, CheckButton, ColumnView, ColumnViewColumn, CustomFilter, CustomSorter,
     EventSequenceState, FilterListModel, GestureClick, Label, ListItem, Ordering, Orientation,
-    PropagationPhase, SearchEntry, SingleSelection, SortListModel, Statusbar, ToggleButton, gdk,
+    PropagationPhase, SearchEntry, SingleSelection, SortListModel, ToggleButton, gdk,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -43,9 +43,15 @@ pub fn refresh_all_favorite_buttons(is_favorite: bool) {
 
 pub fn create_package_list(
     search_entry: &SearchEntry,
-) -> (ColumnView, ListStore, Statusbar, CustomFilter) {
+) -> (ColumnView, ListStore, Label, CustomFilter) {
     let store = ListStore::new::<PackageUpdateObject>();
-    let statusbar = Statusbar::new();
+    let statusbar = Label::new(None);
+    statusbar.set_xalign(0.0);
+    statusbar.set_margin_start(10);
+    statusbar.set_margin_end(10);
+    statusbar.set_margin_top(4);
+    statusbar.set_margin_bottom(4);
+    statusbar.add_css_class("dim-label");
 
     let column_view = ColumnView::new(None::<SingleSelection>);
     column_view.set_show_row_separators(true);
@@ -84,11 +90,7 @@ pub fn create_package_list(
     return (column_view, store, statusbar, filter);
 }
 
-pub fn update_statusbar(statusbar: &Statusbar, store: &ListStore) {
-    let context_id = statusbar.context_id("updates");
-
-    statusbar.remove_all(context_id);
-
+pub fn update_statusbar(statusbar: &Label, store: &ListStore) {
     let n_items = store.n_items();
     let mut selected_count = 0;
     let mut total_size = 0i64;
@@ -114,7 +116,7 @@ pub fn update_statusbar(statusbar: &Statusbar, store: &ListStore) {
         format!("{} updates selected", selected_count)
     };
 
-    statusbar.push(context_id, &status_text);
+    statusbar.set_text(&status_text);
 }
 
 pub fn save_unselected_from_store(store: &ListStore) {
@@ -524,7 +526,7 @@ fn create_repository_column(column_view: &ColumnView) {
     column_view.append_column(&repository_column);
 }
 
-fn create_upgrade_column(column_view: &ColumnView, store: &ListStore, statusbar: &Statusbar) {
+fn create_upgrade_column(column_view: &ColumnView, store: &ListStore, statusbar: &Label) {
     let upgrade_factory = gtk4::SignalListItemFactory::new();
     let shift_held: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
     let last_anchor: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));

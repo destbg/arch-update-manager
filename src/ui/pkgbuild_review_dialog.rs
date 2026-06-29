@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Dialog, Frame, Label, Orientation, PolicyType, ResponseType,
-    ScrolledWindow, Spinner, Window, WrapMode,
+    Align, Box as GtkBox, Frame, Label, Orientation, PolicyType, ScrolledWindow, Spinner, Window,
+    WrapMode,
 };
 use sourceview5::prelude::*;
 use sourceview5::{LanguageManager, View};
@@ -10,6 +10,7 @@ use crate::helpers::aur_pkgbuild::prepare_pkgbuild_review;
 use crate::log_info;
 use crate::models::diff_row::DiffRow;
 use crate::models::pkgbuild_review::PkgbuildReview;
+use crate::ui::dialogs::build_dialog_window;
 use crate::ui::package_list::prefers_dark;
 use crate::ui::pacnew_diff::{
     build_buffer, build_source_view, diff_highlight_colors, wrap_in_scroll,
@@ -18,38 +19,19 @@ use crate::ui::pacnew_diff::{
 pub fn show_pkgbuild_review_dialog(parent: &Window, package: &str) {
     log_info!("pkgbuild review opened for {}", package);
 
-    let dialog = Dialog::builder()
-        .title(&format!("Review PKGBUILD: {}", package))
-        .transient_for(parent)
-        .modal(true)
-        .default_width(820)
-        .default_height(620)
-        .build();
-
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
-    content_area.set_vexpand(true);
-    content_area.set_hexpand(true);
+    let (dialog, content_area) =
+        build_dialog_window(parent, &format!("Review PKGBUILD: {}", package), 820, 620);
     content_area.append(&build_loading_view(package));
-
-    dialog.add_button("Close", ResponseType::Close);
-    dialog.connect_response(|d, response| {
-        if response == ResponseType::Close || response == ResponseType::DeleteEvent {
-            d.close();
-        }
-    });
-
     dialog.present();
 
     let package_owned = package.to_string();
-    let dialog_for_async = dialog.clone();
+    let content_for_async = content_area.clone();
     glib::spawn_future_local(async move {
         let pkg = package_owned.clone();
         let result = gio::spawn_blocking(move || prepare_pkgbuild_review(&pkg)).await;
 
-        let content_area = dialog_for_async.content_area();
-        while let Some(child) = content_area.first_child() {
-            content_area.remove(&child);
+        while let Some(child) = content_for_async.first_child() {
+            content_for_async.remove(&child);
         }
 
         let body = match result {
@@ -57,7 +39,7 @@ pub fn show_pkgbuild_review_dialog(parent: &Window, package: &str) {
             Ok(Err(e)) => build_message_view(&format!("Failed to load PKGBUILD: {}", e)),
             Err(_) => build_message_view("Failed to load PKGBUILD (background task failed)."),
         };
-        content_area.append(&body);
+        content_for_async.append(&body);
     });
 }
 
@@ -267,7 +249,10 @@ fn build_file_diff_view(path: &str, rows: &[&DiffRow]) -> View {
         kinds.push(kind);
     }
 
-    let buffer = build_buffer(text.trim_end_matches('\n'), language_for_file(path).as_ref());
+    let buffer = build_buffer(
+        text.trim_end_matches('\n'),
+        language_for_file(path).as_ref(),
+    );
 
     let (removed_color, added_color) = diff_highlight_colors();
     let added = buffer.create_tag(

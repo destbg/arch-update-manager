@@ -1,6 +1,6 @@
 use glib::clone;
 use gtk4::prelude::*;
-use gtk4::{Align, Box as GtkBox, Button, Dialog, Frame, Label, Orientation};
+use gtk4::{Align, Box as GtkBox, Button, Frame, Label, Orientation};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -137,7 +137,7 @@ pub fn run_command_in_dialog<F>(parent: &gtk4::Window, command: &str, on_finishe
 where
     F: Fn() + 'static,
 {
-    let dialog = Dialog::builder()
+    let dialog = gtk4::Window::builder()
         .title("Running command")
         .transient_for(parent)
         .modal(true)
@@ -145,9 +145,9 @@ where
         .default_height(520)
         .build();
 
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
+    let content_area = GtkBox::new(Orientation::Vertical, 0);
     content_area.set_vexpand(true);
+    dialog.set_child(Some(&content_area));
 
     let header = GtkBox::new(Orientation::Vertical, 4);
     header.set_margin_start(12);

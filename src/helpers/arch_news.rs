@@ -32,7 +32,10 @@ pub fn news_to_show() -> Vec<NewsItem> {
         return Vec::new();
     };
 
-    let new_count = items.iter().filter(|item| item.pub_date > last_seen).count();
+    let new_count = items
+        .iter()
+        .filter(|item| item.pub_date > last_seen)
+        .count();
 
     if latest > last_seen {
         let _ = write_last_seen(latest);

@@ -1,24 +1,11 @@
 use gtk4::prelude::*;
-use gtk4::{
-    ApplicationWindow, Dialog, Label, Orientation, PolicyType, ResponseType, ScrolledWindow,
-    TextView, WrapMode,
-};
+use gtk4::{ApplicationWindow, Label, Orientation, PolicyType, ScrolledWindow, TextView, WrapMode};
 
 use crate::helpers::package_files::list_package_files;
+use crate::ui::dialogs::build_dialog_window;
 
 pub fn show_package_files_dialog(parent: &ApplicationWindow, package: &str) {
-    let dialog = Dialog::builder()
-        .title(&format!("Files: {}", package))
-        .transient_for(parent)
-        .modal(true)
-        .default_width(720)
-        .default_height(520)
-        .build();
-
-    let content = dialog.content_area();
-    content.set_spacing(0);
-    content.set_vexpand(true);
-    content.set_hexpand(true);
+    let (dialog, content) = build_dialog_window(parent, &format!("Files: {}", package), 720, 520);
 
     let body = match list_package_files(package) {
         Ok(files) if files.is_empty() => {
@@ -29,10 +16,7 @@ pub fn show_package_files_dialog(parent: &ApplicationWindow, package: &str) {
     };
 
     content.append(&body);
-
-    dialog.add_button("Close", ResponseType::Close);
-    dialog.connect_response(|d, _| d.close());
-    dialog.show();
+    dialog.present();
 }
 
 fn build_file_list_view(files: &[String]) -> gtk4::Box {

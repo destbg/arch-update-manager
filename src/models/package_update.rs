@@ -35,7 +35,10 @@ impl PackageUpdate {
     }
 
     pub fn aur_scan_summary(&self) -> Option<(String, usize)> {
-        let worst = self.aur_scan_findings.iter().max_by_key(|f| f.severity_rank())?;
+        let worst = self
+            .aur_scan_findings
+            .iter()
+            .max_by_key(|f| f.severity_rank())?;
         return Some((worst.severity.clone(), self.aur_scan_findings.len()));
     }
 }

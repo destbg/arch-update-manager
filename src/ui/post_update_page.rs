@@ -928,30 +928,22 @@ fn build_reboot_banner() -> GtkBox {
 }
 
 fn prompt_reboot(parent: Option<&gtk4::Window>) {
-    let dialog = gtk4::MessageDialog::builder()
+    let alert = gtk4::AlertDialog::builder()
         .modal(true)
-        .message_type(gtk4::MessageType::Question)
-        .text("Reboot now?")
-        .secondary_text("Your system will restart immediately. Save your work first.")
+        .message("Reboot now?")
+        .detail("Your system will restart immediately. Save your work first.")
+        .buttons(["Cancel", "Reboot"])
+        .cancel_button(0)
+        .default_button(1)
         .build();
 
-    if let Some(window) = parent {
-        dialog.set_transient_for(Some(window));
-    }
-
-    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
-    dialog.add_button("Reboot", gtk4::ResponseType::Accept);
-
-    dialog.connect_response(|dialog, response| {
-        if response == gtk4::ResponseType::Accept {
+    alert.choose(parent, gio::Cancellable::NONE, |result| {
+        if let Ok(1) = result {
             let _ = std::process::Command::new("systemctl")
                 .arg("reboot")
                 .spawn();
         }
-        dialog.close();
     });
-
-    dialog.show();
 }
 
 fn build_all_clear_box() -> GtkBox {
@@ -1262,20 +1254,18 @@ fn format_service_error(outcome: &ServiceRestartOutcome) -> String {
 }
 
 fn show_service_error_dialog(parent: Option<&gtk4::Window>, service_name: &str, content: &str) {
-    let dialog = gtk4::Dialog::builder()
+    let window = gtk4::Window::builder()
         .title(&format!("Error restarting {}", service_name))
         .modal(true)
         .default_width(540)
         .default_height(360)
         .build();
 
-    if let Some(window) = parent {
-        dialog.set_transient_for(Some(window));
+    if let Some(parent_window) = parent {
+        window.set_transient_for(Some(parent_window));
     }
 
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
-    content_area.set_vexpand(true);
+    let root = GtkBox::new(Orientation::Vertical, 0);
 
     let scrolled = ScrolledWindow::builder()
         .vexpand(true)
@@ -1295,10 +1285,23 @@ fn show_service_error_dialog(parent: Option<&gtk4::Window>, service_name: &str, 
     text.buffer().set_text(content);
 
     scrolled.set_child(Some(&text));
-    content_area.append(&scrolled);
+    root.append(&scrolled);
 
-    dialog.add_button("Close", gtk4::ResponseType::Close);
-    dialog.connect_response(|d, _| d.close());
+    root.append(&Separator::new(Orientation::Horizontal));
 
-    dialog.show();
+    let button_row = GtkBox::new(Orientation::Horizontal, 0);
+    button_row.set_halign(Align::End);
+    button_row.set_margin_start(8);
+    button_row.set_margin_end(8);
+    button_row.set_margin_top(8);
+    button_row.set_margin_bottom(8);
+
+    let close_button = Button::with_label("Close");
+    let window_for_close = window.clone();
+    close_button.connect_clicked(move |_| window_for_close.close());
+    button_row.append(&close_button);
+    root.append(&button_row);
+
+    window.set_child(Some(&root));
+    window.present();
 }

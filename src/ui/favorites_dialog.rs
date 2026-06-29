@@ -24,7 +24,7 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
     favorites.append(&mut others);
     let sorted_packages = favorites;
 
-    let dialog = gtk4::Dialog::builder()
+    let dialog = gtk4::Window::builder()
         .title("Manage Favorite Packages")
         .transient_for(parent)
         .modal(true)
@@ -32,9 +32,9 @@ pub fn show_manage_favorites_dialog(parent: &gtk4::Window) {
         .default_height(520)
         .build();
 
-    let content = dialog.content_area();
-    content.set_spacing(0);
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.set_vexpand(true);
+    dialog.set_child(Some(&content));
 
     let search = gtk4::SearchEntry::new();
     search.set_placeholder_text(Some("Search packages"));

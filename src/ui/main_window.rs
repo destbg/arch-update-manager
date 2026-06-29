@@ -38,7 +38,7 @@ use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn,
     FilterListModel, HeaderBar, Orientation, Paned, ScrolledWindow, SearchBar, SearchEntry,
-    Separator, SingleSelection, SortListModel, Stack, Statusbar,
+    Separator, SingleSelection, SortListModel, Stack,
 };
 use std::cell::RefCell;
 
@@ -514,58 +514,48 @@ fn wire_ignore_button(panel: &InfoPanel, stack: &Stack, window: &ApplicationWind
             )
         };
 
-        let dialog = show_confirm_dialog(&window, title, &message, accept_label);
-
         let stack_d = stack.clone();
         let window_d = window.clone();
         let pkg_d = pkg.clone();
         let btn_d = btn.clone();
         let handler_id_cell_d = handler_id_cell.clone();
-        let already_handled = std::rc::Rc::new(std::cell::RefCell::new(false));
-        let handled_clone = already_handled.clone();
-        dialog.connect_response(move |dialog, response| {
-            if *handled_clone.borrow() {
+        show_confirm_dialog(&window, title, &message, accept_label, move |accepted| {
+            if !accepted {
+                revert_toggle(&btn_d, &handler_id_cell_d, !target_state);
                 return;
             }
-            *handled_clone.borrow_mut() = true;
 
-            if response == gtk4::ResponseType::Accept {
-                log_info!(
-                    "ignore toggle confirmed for {}: {}",
-                    pkg_d,
-                    if target_state { "added" } else { "removed" }
-                );
-                let result = if target_state {
-                    add_to_ignore_pkg(&pkg_d)
-                } else {
-                    remove_from_ignore_pkg(&pkg_d)
-                };
-                match result {
-                    Ok(()) => {
-                        update_ignore_button_tooltip(&btn_d);
-                        trigger_check_service();
-                        if let Some(content_box) = stack_d
-                            .child_by_name("content")
-                            .and_downcast::<GtkBox>()
-                        {
-                            stack_d.set_visible_child_name("loading");
-                            load_packages(stack_d.clone(), content_box, window_d.clone());
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to update pacman.conf IgnorePkg: {}", e);
-                        show_error_dialog(
-                            window_d.upcast_ref::<gtk4::Window>(),
-                            "Failed to update pacman.conf",
-                            &format!("{}", e),
-                        );
-                        revert_toggle(&btn_d, &handler_id_cell_d, !target_state);
+            log_info!(
+                "ignore toggle confirmed for {}: {}",
+                pkg_d,
+                if target_state { "added" } else { "removed" }
+            );
+            let result = if target_state {
+                add_to_ignore_pkg(&pkg_d)
+            } else {
+                remove_from_ignore_pkg(&pkg_d)
+            };
+            match result {
+                Ok(()) => {
+                    update_ignore_button_tooltip(&btn_d);
+                    trigger_check_service();
+                    if let Some(content_box) =
+                        stack_d.child_by_name("content").and_downcast::<GtkBox>()
+                    {
+                        stack_d.set_visible_child_name("loading");
+                        load_packages(stack_d.clone(), content_box, window_d.clone());
                     }
                 }
-            } else {
-                revert_toggle(&btn_d, &handler_id_cell_d, !target_state);
+                Err(e) => {
+                    eprintln!("Failed to update pacman.conf IgnorePkg: {}", e);
+                    show_error_dialog(
+                        window_d.upcast_ref::<gtk4::Window>(),
+                        "Failed to update pacman.conf",
+                        &format!("{}", e),
+                    );
+                    revert_toggle(&btn_d, &handler_id_cell_d, !target_state);
+                }
             }
-            dialog.close();
         });
     });
 
@@ -753,7 +743,7 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                     list_store.append(&PackageUpdateObject::new(package));
                 }
 
-                if let Some(statusbar) = content_box.last_child().and_downcast::<Statusbar>() {
+                if let Some(statusbar) = content_box.last_child().and_downcast::<gtk4::Label>() {
                     update_statusbar(&statusbar, &list_store);
                 }
 

@@ -16,8 +16,8 @@ use crate::{
     },
     log_info,
     models::{
-        app_settings::AppSettings, check_schedule::CheckSchedule, snapshot_group::SnapshotGroup,
-        snapshot_retention_period::SnapshotRetentionPeriod,
+        app_settings::AppSettings, aur_managers::AurManagers, check_schedule::CheckSchedule,
+        snapshot_group::SnapshotGroup, snapshot_retention_period::SnapshotRetentionPeriod,
     },
     ui::{
         blacklist_dialog::show_manage_blacklist_dialog, dialogs::show_confirm_dialog,
@@ -33,7 +33,7 @@ pub fn show_settings_dialog(
 ) {
     install_settings_css();
 
-    let dialog = gtk4::Dialog::builder()
+    let dialog = gtk4::Window::builder()
         .title("Settings")
         .transient_for(parent)
         .modal(true)
@@ -41,9 +41,9 @@ pub fn show_settings_dialog(
         .default_height(600)
         .build();
 
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
+    let content_area = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content_area.set_vexpand(true);
+    dialog.set_child(Some(&content_area));
 
     let updates_container = build_tab_container();
     let (aur_enable_check, aur_combo, aur_devel_check) =
@@ -91,7 +91,10 @@ pub fn show_settings_dialog(
         ("Updates", "software-update-available-symbolic"),
         ("Repositories", "drive-harddisk-symbolic"),
         ("Snapshots & Cache", "document-save-symbolic"),
-        ("Tray & Notifications", "preferences-system-notifications-symbolic"),
+        (
+            "Tray & Notifications",
+            "preferences-system-notifications-symbolic",
+        ),
         ("Appearance", "preferences-desktop-appearance-symbolic"),
         ("System", "emblem-system-symbolic"),
     ];
@@ -232,18 +235,16 @@ pub fn show_settings_dialog(
     aur_enable_check.connect_toggled(move |check| {
         let is_active = check.is_active();
         aur_combo_for_enable.set_sensitive(is_active);
-        aur_devel_for_enable.set_sensitive(is_active);
+        update_devel_sensitivity(check, &aur_combo_for_enable, &aur_devel_for_enable);
         update_settings(move |s| s.enable_aur_support = is_active);
     });
 
-    aur_combo.connect_changed(move |combo| {
-        let value = combo.active_id().and_then(|id| {
-            if id == "auto" {
-                None
-            } else {
-                Some(id.to_string())
-            }
-        });
+    let aur_enable_for_combo = aur_enable_check.clone();
+    let aur_devel_for_combo = aur_devel_check.clone();
+    aur_combo.connect_selected_notify(move |combo| {
+        let value =
+            dropdown_active_id(combo).and_then(|id| if id == "auto" { None } else { Some(id) });
+        update_devel_sensitivity(&aur_enable_for_combo, combo, &aur_devel_for_combo);
         update_settings(move |s| s.preferred_aur_helper = value);
     });
 
@@ -389,8 +390,7 @@ pub fn show_settings_dialog(
         });
 
         if active {
-            let schedule = schedule_for_tray
-                .active_id()
+            let schedule = dropdown_active_id(&schedule_for_tray)
                 .map(|id| CheckSchedule::from_id(&id))
                 .unwrap_or_default();
             apply_check_schedule(schedule);
@@ -445,9 +445,8 @@ pub fn show_settings_dialog(
         update_settings(move |s| s.skip_check_on_battery = value);
     });
 
-    check_schedule_combo.connect_changed(move |combo| {
-        let schedule = combo
-            .active_id()
+    check_schedule_combo.connect_selected_notify(move |combo| {
+        let schedule = dropdown_active_id(combo)
             .map(|id| CheckSchedule::from_id(&id))
             .unwrap_or_default();
         let schedule_for_save = schedule.clone();
@@ -528,10 +527,37 @@ fn collect_labels_into(widget: &gtk4::Widget, out: &mut String) {
     }
 }
 
+fn build_id_dropdown(entries: &[(String, String)]) -> gtk4::DropDown {
+    let labels: Vec<&str> = entries.iter().map(|(_, label)| label.as_str()).collect();
+    let dropdown = gtk4::DropDown::from_strings(&labels);
+    let ids: Vec<String> = entries.iter().map(|(id, _)| id.clone()).collect();
+    unsafe {
+        dropdown.set_data("ids", ids);
+    }
+    return dropdown;
+}
+
+fn dropdown_active_id(dropdown: &gtk4::DropDown) -> Option<String> {
+    unsafe {
+        let ids = dropdown.data::<Vec<String>>("ids")?;
+        return ids.as_ref().get(dropdown.selected() as usize).cloned();
+    }
+}
+
+fn dropdown_set_active_id(dropdown: &gtk4::DropDown, id: &str) {
+    unsafe {
+        if let Some(ids) = dropdown.data::<Vec<String>>("ids") {
+            if let Some(position) = ids.as_ref().iter().position(|candidate| candidate == id) {
+                dropdown.set_selected(position as u32);
+            }
+        }
+    }
+}
+
 fn create_aur_group(
     settings: &AppSettings,
     main_container: &gtk4::Box,
-) -> (gtk4::CheckButton, gtk4::ComboBoxText, gtk4::CheckButton) {
+) -> (gtk4::CheckButton, gtk4::DropDown, gtk4::CheckButton) {
     let aur_section = create_preference_group(
         "AUR Package Manager",
         "Enable support for installing packages from the Arch User Repository (AUR).",
@@ -543,38 +569,63 @@ fn create_aur_group(
     aur_section.append(&aur_enable_check);
 
     let available_helpers = get_available_aur_helpers();
-    let aur_combo = gtk4::ComboBoxText::new();
+    let mut aur_entries = vec![("auto".to_string(), "Auto-detect".to_string())];
+    for helper in &available_helpers {
+        aur_entries.push((helper.clone(), helper.clone()));
+    }
+    let aur_combo = build_id_dropdown(&aur_entries);
     aur_combo.add_css_class("settings-combo");
     aur_combo.set_margin_top(8);
-
-    aur_combo.append(Some("auto"), "Auto-detect (recommended)");
-    for helper in &available_helpers {
-        aur_combo.append(Some(helper), helper);
-    }
-
-    if let Some(preferred) = &settings.preferred_aur_helper {
-        aur_combo.set_active_id(Some(preferred));
-    } else {
-        aur_combo.set_active_id(Some("auto"));
-    }
-
+    dropdown_set_active_id(
+        &aur_combo,
+        settings.preferred_aur_helper.as_deref().unwrap_or("auto"),
+    );
     aur_combo.set_sensitive(settings.enable_aur_support);
-
     aur_section.append(&aur_combo);
 
     let devel_check = gtk4::CheckButton::with_label("Check development packages (devel mode)");
     devel_check.add_css_class("settings-check");
     devel_check.set_active(settings.enable_devel_aur);
     devel_check.set_margin_top(12);
-    devel_check.set_sensitive(settings.enable_aur_support);
-    devel_check.set_tooltip_text(Some(
-        "Also check git, svn, and bzr packages for new commits, not just version bumps.",
-    ));
+    update_devel_sensitivity(&aur_enable_check, &aur_combo, &devel_check);
     aur_section.append(&devel_check);
 
     main_container.append(&aur_section);
 
     return (aur_enable_check, aur_combo, devel_check);
+}
+
+fn aur_helper_for_selection(combo: &gtk4::DropDown) -> Option<String> {
+    let id = dropdown_active_id(combo).unwrap_or_else(|| "auto".to_string());
+    if id == "auto" {
+        return get_available_aur_helpers().into_iter().next();
+    }
+    return Some(id);
+}
+
+fn selection_supports_devel(combo: &gtk4::DropDown) -> bool {
+    return aur_helper_for_selection(combo)
+        .and_then(|name| AurManagers::from_command(&name))
+        .map(|manager| manager.supports_devel())
+        .unwrap_or(false);
+}
+
+fn update_devel_sensitivity(
+    enable_check: &gtk4::CheckButton,
+    combo: &gtk4::DropDown,
+    devel_check: &gtk4::CheckButton,
+) {
+    let supported = selection_supports_devel(combo);
+    devel_check.set_sensitive(enable_check.is_active() && supported);
+    if supported {
+        devel_check.set_tooltip_text(Some(
+            "Also check git, svn, and bzr packages for new commits, not just version bumps.",
+        ));
+    } else {
+        devel_check.set_tooltip_text(Some(
+            "The selected AUR helper does not support devel mode.",
+        ));
+    }
 }
 
 fn create_show_descriptions_group(
@@ -651,7 +702,7 @@ fn create_system_tray_group(
     gtk4::CheckButton,
     gtk4::CheckButton,
     gtk4::CheckButton,
-    gtk4::ComboBoxText,
+    gtk4::DropDown,
     gtk4::CheckButton,
     gtk4::CheckButton,
 ) {
@@ -705,12 +756,13 @@ fn create_system_tray_group(
     interval_label.set_hexpand(true);
     interval_box.append(&interval_label);
 
-    let check_schedule_combo = gtk4::ComboBoxText::new();
+    let schedule_entries: Vec<(String, String)> = CheckSchedule::all()
+        .iter()
+        .map(|schedule| (schedule.id().to_string(), schedule.label().to_string()))
+        .collect();
+    let check_schedule_combo = build_id_dropdown(&schedule_entries);
     check_schedule_combo.add_css_class("settings-combo");
-    for schedule in CheckSchedule::all() {
-        check_schedule_combo.append(Some(schedule.id()), schedule.label());
-    }
-    check_schedule_combo.set_active_id(Some(settings.check_schedule.id()));
+    dropdown_set_active_id(&check_schedule_combo, settings.check_schedule.id());
     check_schedule_combo.set_halign(gtk4::Align::End);
     check_schedule_combo.set_sensitive(systemd_available && settings.enable_system_tray);
     interval_box.append(&check_schedule_combo);
@@ -811,14 +863,15 @@ fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> 
     provider_label.set_hexpand(true);
     provider_box.append(&provider_label);
 
-    let provider_combo = gtk4::ComboBoxText::new();
-    provider_combo.add_css_class("settings-combo");
+    let mut provider_entries: Vec<(String, String)> = Vec::new();
     if has_timeshift {
-        provider_combo.append(Some("timeshift"), "Timeshift");
+        provider_entries.push(("timeshift".to_string(), "Timeshift".to_string()));
     }
     if has_snapper {
-        provider_combo.append(Some("snapper"), "Snapper");
+        provider_entries.push(("snapper".to_string(), "Snapper".to_string()));
     }
+    let provider_combo = build_id_dropdown(&provider_entries);
+    provider_combo.add_css_class("settings-combo");
 
     let active_provider = if settings.create_snapper_snapshot && has_snapper {
         "snapper"
@@ -832,7 +885,7 @@ fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> 
         ""
     };
     if !active_provider.is_empty() {
-        provider_combo.set_active_id(Some(active_provider));
+        dropdown_set_active_id(&provider_combo, active_provider);
     }
     provider_combo.set_halign(gtk4::Align::End);
     provider_box.append(&provider_combo);
@@ -864,13 +917,14 @@ fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> 
     retention_period_label.set_hexpand(true);
     retention_period_box.append(&retention_period_label);
 
-    let retention_period_combo = gtk4::ComboBoxText::new();
+    let retention_period_combo = build_id_dropdown(&[
+        ("forever".to_string(), "Forever".to_string()),
+        ("day".to_string(), "1 Day".to_string()),
+        ("week".to_string(), "1 Week".to_string()),
+        ("month".to_string(), "1 Month".to_string()),
+        ("year".to_string(), "1 Year".to_string()),
+    ]);
     retention_period_combo.add_css_class("settings-combo");
-    retention_period_combo.append(Some("forever"), "Forever");
-    retention_period_combo.append(Some("day"), "1 Day");
-    retention_period_combo.append(Some("week"), "1 Week");
-    retention_period_combo.append(Some("month"), "1 Month");
-    retention_period_combo.append(Some("year"), "1 Year");
 
     let active_id = match settings.snapshot_retention_period {
         SnapshotRetentionPeriod::Forever => "forever",
@@ -879,7 +933,7 @@ fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> 
         SnapshotRetentionPeriod::Month => "month",
         SnapshotRetentionPeriod::Year => "year",
     };
-    retention_period_combo.set_active_id(Some(active_id));
+    dropdown_set_active_id(&retention_period_combo, active_id);
     retention_period_combo.set_halign(gtk4::Align::End);
     retention_period_box.append(&retention_period_combo);
 
@@ -907,14 +961,8 @@ fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> 
 
     main_container.append(&section);
 
-    let selected_timeshift = provider_combo
-        .active_id()
-        .map(|id| id == "timeshift")
-        .unwrap_or(false);
-    let selected_snapper = provider_combo
-        .active_id()
-        .map(|id| id == "snapper")
-        .unwrap_or(false);
+    let selected_timeshift = dropdown_active_id(&provider_combo).as_deref() == Some("timeshift");
+    let selected_snapper = dropdown_active_id(&provider_combo).as_deref() == Some("snapper");
 
     provider_box.set_sensitive(initial_enabled);
     retention_count_box.set_sensitive(initial_enabled && selected_timeshift);
@@ -941,10 +989,10 @@ fn create_snapshot_group(settings: &AppSettings, main_container: &gtk4::Box) -> 
 
 fn save_snapshot_settings(group: &SnapshotGroup) {
     let enabled = group.enable_check.is_active();
-    let is_timeshift = group.provider_combo.active_id().as_deref() == Some("timeshift");
-    let is_snapper = group.provider_combo.active_id().as_deref() == Some("snapper");
+    let is_timeshift = dropdown_active_id(&group.provider_combo).as_deref() == Some("timeshift");
+    let is_snapper = dropdown_active_id(&group.provider_combo).as_deref() == Some("snapper");
     let count = group.retention_count_spin.value() as u32;
-    let period = match group.retention_period_combo.active_id().as_deref() {
+    let period = match dropdown_active_id(&group.retention_period_combo).as_deref() {
         Some("day") => SnapshotRetentionPeriod::Day,
         Some("week") => SnapshotRetentionPeriod::Week,
         Some("month") => SnapshotRetentionPeriod::Month,
@@ -976,8 +1024,8 @@ fn wire_snapshot_group_signals(group: &SnapshotGroup) {
     group.enable_check.connect_toggled(move |check| {
         let enabled = check.is_active();
         provider_combo_w.set_sensitive(enabled);
-        let is_timeshift = provider_combo_w.active_id().as_deref() == Some("timeshift");
-        let is_snapper = provider_combo_w.active_id().as_deref() == Some("snapper");
+        let is_timeshift = dropdown_active_id(&provider_combo_w).as_deref() == Some("timeshift");
+        let is_snapper = dropdown_active_id(&provider_combo_w).as_deref() == Some("snapper");
         retention_count_box_w.set_sensitive(enabled && is_timeshift);
         retention_period_box_w.set_sensitive(enabled && is_timeshift);
         retention_count_box_w.set_visible(is_timeshift);
@@ -993,10 +1041,10 @@ fn wire_snapshot_group_signals(group: &SnapshotGroup) {
     let deletion_info_label_w = group.deletion_info_label.clone();
     let snap_pac_info_w = group.snap_pac_info.clone();
     let save_clone = save.clone();
-    group.provider_combo.connect_changed(move |combo| {
+    group.provider_combo.connect_selected_notify(move |combo| {
         let enabled = enable_check_w.is_active();
-        let is_timeshift = combo.active_id().as_deref() == Some("timeshift");
-        let is_snapper = combo.active_id().as_deref() == Some("snapper");
+        let is_timeshift = dropdown_active_id(combo).as_deref() == Some("timeshift");
+        let is_snapper = dropdown_active_id(combo).as_deref() == Some("snapper");
         retention_count_box_w.set_sensitive(enabled && is_timeshift);
         retention_period_box_w.set_sensitive(enabled && is_timeshift);
         retention_count_box_w.set_visible(is_timeshift);
@@ -1014,7 +1062,7 @@ fn wire_snapshot_group_signals(group: &SnapshotGroup) {
     let save_clone = save.clone();
     group
         .retention_period_combo
-        .connect_changed(move |_| save_clone());
+        .connect_selected_notify(move |_| save_clone());
 }
 
 fn create_favorites_group(
@@ -1078,27 +1126,26 @@ fn create_favorites_group(
                 "Switch",
             )
         };
-        let dialog = show_confirm_dialog(&parent_for_mode, title, message, accept_label);
         let btn_for_response = btn.clone();
-        dialog.connect_response(move |dialog, response| {
-            if response == gtk4::ResponseType::Accept {
-                let mut s = load_settings();
-                s.favorites_exclusion_mode = switching_to_exclusion;
-                s.favorite_packages.clear();
-                if let Err(e) = save_settings(&s) {
-                    eprintln!("Failed to save favorites mode: {}", e);
-                } else {
-                    refresh_all_favorite_buttons(switching_to_exclusion);
-                    btn_for_response.set_label(if switching_to_exclusion {
-                        "Switch to Inclusion Mode"
-                    } else {
-                        "Switch to Exclusion Mode"
-                    });
-                    update_mode_button_tooltip(&btn_for_response, switching_to_exclusion);
-                    kick_tray();
-                }
+        show_confirm_dialog(&parent_for_mode, title, message, accept_label, move |accepted| {
+            if !accepted {
+                return;
             }
-            dialog.close();
+            let mut s = load_settings();
+            s.favorites_exclusion_mode = switching_to_exclusion;
+            s.favorite_packages.clear();
+            if let Err(e) = save_settings(&s) {
+                eprintln!("Failed to save favorites mode: {}", e);
+            } else {
+                refresh_all_favorite_buttons(switching_to_exclusion);
+                btn_for_response.set_label(if switching_to_exclusion {
+                    "Switch to Inclusion Mode"
+                } else {
+                    "Switch to Exclusion Mode"
+                });
+                update_mode_button_tooltip(&btn_for_response, switching_to_exclusion);
+                kick_tray();
+            }
         });
     });
     section.append(&mode_btn);
@@ -1497,4 +1544,3 @@ fn build_padded_button(label_text: &str) -> gtk4::Button {
     button.set_child(Some(&label));
     return button;
 }
-

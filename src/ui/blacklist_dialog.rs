@@ -3,19 +3,10 @@ use gtk4::prelude::*;
 use crate::helpers::pacman_ignore::{list_managed_ignores, remove_from_ignore_pkg};
 use crate::helpers::tray_integration::trigger_check_service;
 use crate::log_info;
+use crate::ui::dialogs::build_dialog_window;
 
 pub fn show_manage_blacklist_dialog(parent: &gtk4::Window) {
-    let dialog = gtk4::Dialog::builder()
-        .title("Blacklisted Packages")
-        .transient_for(parent)
-        .modal(true)
-        .default_width(420)
-        .default_height(440)
-        .build();
-
-    let content = dialog.content_area();
-    content.set_spacing(0);
-    content.set_vexpand(true);
+    let (dialog, content) = build_dialog_window(parent, "Blacklisted Packages", 420, 440);
 
     let header_label = gtk4::Label::new(Some(
         "Packages listed here are in /etc/pacman.conf IgnorePkg. Pacman will skip updates for these packages until they are removed from the list.",
@@ -64,15 +55,7 @@ pub fn show_manage_blacklist_dialog(parent: &gtk4::Window) {
     });
     refresh();
 
-    let close_btn = dialog.add_button("Close", gtk4::ResponseType::Close);
-    close_btn.set_margin_end(12);
-    close_btn.set_margin_bottom(8);
-
-    dialog.connect_response(|dialog, _| {
-        dialog.close();
-    });
-
-    dialog.show();
+    dialog.present();
 }
 
 fn rebuild_list(list_box: &gtk4::ListBox, empty_label: &gtk4::Label) {

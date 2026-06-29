@@ -26,9 +26,8 @@ use gio::ListStore;
 use glib::clone;
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, ColumnView, FilterListModel, Frame, Image,
+    ApplicationWindow, Box as GtkBox, Button, ColumnView, FilterListModel, Frame, Image, Label,
     Orientation, Paned, ScrolledWindow, Separator, SingleSelection, SortListModel, Stack,
-    Statusbar,
 };
 use shlex::try_quote as quote;
 use std::collections::HashMap;
@@ -143,47 +142,51 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
                             "{}You selected {} of {} core package updates.\n\nInstalling only some of them is a partial upgrade.\nThis can sometimes cause errors or leave a package broken.{}",
                             disk_prefix, selected_core, total_core, snapshot_note
                         );
-                        let dialog = show_partial_upgrade_dialog(&window, &message);
-
-                        let store = store.clone();
-                        let window = window.clone();
-                        dialog.connect_response(move |dialog, response| {
-                            match response {
-                                gtk4::ResponseType::Yes => {
-                                    log_info!("partial upgrade: full upgrade chosen");
-                                    select_all_official(&store);
-                                    run_install(&store, &window, create_snapshot, create_snapper);
-                                }
-                                gtk4::ResponseType::Accept => {
-                                    log_info!("partial upgrade: install selected anyway");
-                                    run_install(&store, &window, create_snapshot, create_snapper);
-                                }
-                                _ => {
-                                    log_info!("partial upgrade: cancelled");
-                                }
-                            }
-                            dialog.close();
-                        });
+                        let store_full = store.clone();
+                        let window_full = window.clone();
+                        let store_selected = store.clone();
+                        let window_selected = window.clone();
+                        show_partial_upgrade_dialog(
+                            &window,
+                            &message,
+                            move || {
+                                log_info!("partial upgrade: full upgrade chosen");
+                                select_all_official(&store_full);
+                                run_install(&store_full, &window_full, create_snapshot, create_snapper);
+                            },
+                            move || {
+                                log_info!("partial upgrade: install selected anyway");
+                                run_install(
+                                    &store_selected,
+                                    &window_selected,
+                                    create_snapshot,
+                                    create_snapper,
+                                );
+                            },
+                        );
                     } else {
                         let message = format!("{}Install selected updates?{}", disk_prefix, snapshot_note);
-                        let confirm_dialog = show_confirm_dialog(
+                        let store = store.clone();
+                        let window_confirm = window.clone();
+                        show_confirm_dialog(
                             &window,
                             "Confirm Installation",
                             &message,
                             "Install",
+                            move |accepted| {
+                                if accepted {
+                                    log_info!("install confirmation accepted");
+                                    run_install(
+                                        &store,
+                                        &window_confirm,
+                                        create_snapshot,
+                                        create_snapper,
+                                    );
+                                } else {
+                                    log_info!("install confirmation dismissed");
+                                }
+                            },
                         );
-
-                        let store = store.clone();
-                        let window = window.clone();
-                        confirm_dialog.connect_response(move |dialog, response| {
-                            if response == gtk4::ResponseType::Accept {
-                                log_info!("install confirmation accepted");
-                                run_install(&store, &window, create_snapshot, create_snapper);
-                            } else {
-                                log_info!("install confirmation dismissed");
-                            }
-                            dialog.close();
-                        });
                     }
                 }
             }
@@ -279,7 +282,7 @@ pub fn create_toolbar(show_settings_button: bool) -> GtkBox {
     return toolbar_container;
 }
 
-fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Statusbar)> {
+fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Label)> {
     let Some((_, content_box, _)) = get_navigation_stack(toolbar) else {
         return None;
     };
@@ -316,14 +319,14 @@ fn find_store_and_statusbar(toolbar: &GtkBox) -> Option<(ListStore, Statusbar)> 
         return None;
     };
 
-    let Some(statusbar) = content_box.last_child().and_downcast::<Statusbar>() else {
+    let Some(statusbar) = content_box.last_child().and_downcast::<Label>() else {
         return None;
     };
 
     return Some((list_store, statusbar));
 }
 
-fn clear_all_selections(store: &ListStore, statusbar: &Statusbar) {
+fn clear_all_selections(store: &ListStore, statusbar: &Label) {
     let n_items = store.n_items();
     for i in 0..n_items {
         if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
@@ -343,7 +346,7 @@ fn clear_all_selections(store: &ListStore, statusbar: &Statusbar) {
     save_unselected_from_store(store);
 }
 
-fn select_all_packages(store: &ListStore, statusbar: &Statusbar) {
+fn select_all_packages(store: &ListStore, statusbar: &Label) {
     let n_items = store.n_items();
     for i in 0..n_items {
         if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
@@ -496,7 +499,6 @@ fn install_selected_packages_ui(
             "Creating System Snapshot",
             "Creating Timeshift snapshot and deleting old snapshots...\n\nPlease wait, this may take a few minutes.",
         );
-        progress_dialog.show();
 
         execute_timeshift_operations_async(
             official_packages.clone(),
@@ -531,7 +533,7 @@ fn execute_timeshift_operations_async(
     aur_packages: Vec<PackageUpdate>,
     flatpak_packages: Vec<PackageUpdate>,
     window: ApplicationWindow,
-    progress_dialog: gtk4::Dialog,
+    progress_dialog: gtk4::Window,
     create_snapper: bool,
 ) {
     let (tx, rx) = mpsc::channel();

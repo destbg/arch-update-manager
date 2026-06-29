@@ -1,9 +1,9 @@
 use gio::ListStore;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn, Dialog, Label,
-    ListItem, NoSelection, Orientation, PolicyType, ResponseType, ScrolledWindow, Spinner,
-    TreeExpander, TreeListModel, TreeListRow,
+    Align, ApplicationWindow, Box as GtkBox, Button, ColumnView, ColumnViewColumn, Label, ListItem,
+    NoSelection, Orientation, PolicyType, ScrolledWindow, Spinner, TreeExpander, TreeListModel,
+    TreeListRow,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,6 +14,7 @@ use crate::models::history_action::HistoryAction;
 use crate::models::history_row::HistoryRow;
 use crate::models::history_row_object::HistoryRowObject;
 use crate::models::history_transaction::HistoryTransaction;
+use crate::ui::dialogs::build_dialog_window;
 use crate::ui::downgrade_dialog::show_downgrade_dialog;
 use crate::ui::package_list::prefers_dark;
 
@@ -22,37 +23,17 @@ const HISTORY_LIMIT: usize = 50;
 pub fn show_history_dialog(parent: &ApplicationWindow) {
     log_info!("history dialog opened");
 
-    let dialog = Dialog::builder()
-        .title("Update history")
-        .transient_for(parent)
-        .modal(true)
-        .default_width(760)
-        .default_height(560)
-        .build();
-
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
-    content_area.set_vexpand(true);
-    content_area.set_hexpand(true);
+    let (dialog, content_area) = build_dialog_window(parent, "Update history", 760, 560);
     content_area.append(&build_loading_view());
-
-    dialog.add_button("Close", ResponseType::Close);
-    dialog.connect_response(|d, response| {
-        if response == ResponseType::Close || response == ResponseType::DeleteEvent {
-            d.close();
-        }
-    });
-
     dialog.present();
 
     let parent = parent.clone();
-    let dialog_for_async = dialog.clone();
+    let content_for_async = content_area.clone();
     glib::spawn_future_local(async move {
         let result = gio::spawn_blocking(|| get_update_history(HISTORY_LIMIT)).await;
 
-        let content_area = dialog_for_async.content_area();
-        while let Some(child) = content_area.first_child() {
-            content_area.remove(&child);
+        while let Some(child) = content_for_async.first_child() {
+            content_for_async.remove(&child);
         }
 
         let body = match result {
@@ -62,7 +43,7 @@ pub fn show_history_dialog(parent: &ApplicationWindow) {
             Ok(transactions) => build_table_view(&transactions, &parent),
             Err(_) => build_message_view("Could not read the pacman log."),
         };
-        content_area.append(&body);
+        content_for_async.append(&body);
     });
 }
 
@@ -260,7 +241,9 @@ fn build_downgrade_column(window: &ApplicationWindow) -> ColumnViewColumn {
         };
 
         match obj.row() {
-            HistoryRow::Action(action) if can_downgrade(&action) && action.new_version.is_some() => {
+            HistoryRow::Action(action)
+                if can_downgrade(&action) && action.new_version.is_some() =>
+            {
                 let version = action.new_version.clone().unwrap_or_default();
                 unsafe {
                     if let Some(state) =

@@ -2,21 +2,10 @@ use gtk4::{ApplicationWindow, prelude::*};
 
 use crate::helpers::elevated::open_url_as_user;
 use crate::models::news_item::NewsItem;
+use crate::ui::dialogs::build_dialog_window;
 
 pub fn show_news_dialog(parent: &ApplicationWindow, items: &[NewsItem]) {
-    let dialog = gtk4::Dialog::builder()
-        .title("Arch Linux News")
-        .transient_for(parent)
-        .modal(true)
-        .default_width(560)
-        .default_height(340)
-        .build();
-
-    dialog.add_button("Close", gtk4::ResponseType::Close);
-
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
-    content_area.set_vexpand(true);
+    let (dialog, content_area) = build_dialog_window(parent, "Arch Linux News", 560, 340);
 
     let list_box = gtk4::Box::new(gtk4::Orientation::Vertical, 16);
     list_box.set_margin_start(16);
@@ -35,10 +24,6 @@ pub fn show_news_dialog(parent: &ApplicationWindow, items: &[NewsItem]) {
         .child(&list_box)
         .build();
     content_area.append(&scrolled);
-
-    dialog.connect_response(|dialog, _| {
-        dialog.close();
-    });
 
     dialog.present();
 }

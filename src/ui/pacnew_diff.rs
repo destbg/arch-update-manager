@@ -1,8 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{
-    Align, Box as GtkBox, Button, Dialog, Label, Orientation, Paned, ResponseType, ScrolledWindow,
-    Window,
-};
+use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Paned, ScrolledWindow, Window};
 use similar::{ChangeTag, TextDiff};
 use sourceview5::prelude::*;
 use sourceview5::{Buffer, LanguageManager, StyleScheme, StyleSchemeManager, View};
@@ -18,7 +15,7 @@ pub fn show_pacnew_diff_dialog(parent: &Window, pacnew_path: &str) {
     let original_content = read_file_or_warn(&original_path);
     let pacnew_content = read_file_or_warn(pacnew_path);
 
-    let dialog = Dialog::builder()
+    let dialog = Window::builder()
         .title(&format!("Review {}", pacnew_path))
         .transient_for(parent)
         .modal(true)
@@ -26,9 +23,9 @@ pub fn show_pacnew_diff_dialog(parent: &Window, pacnew_path: &str) {
         .default_height(620)
         .build();
 
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
+    let content_area = GtkBox::new(Orientation::Vertical, 0);
     content_area.set_vexpand(true);
+    dialog.set_child(Some(&content_area));
 
     let header_label = Label::new(Some(&format!(
         "Left side: {}\nRight side: {}",
@@ -165,12 +162,6 @@ pub fn show_pacnew_diff_dialog(parent: &Window, pacnew_path: &str) {
             return;
         }
         dialog_for_save.close();
-    });
-
-    dialog.connect_response(|d, response| {
-        if response == ResponseType::DeleteEvent {
-            d.close();
-        }
     });
 
     dialog.present();
@@ -333,18 +324,12 @@ fn apply_diff_highlight(left: &Buffer, right: &Buffer, left_text: &str, right_te
 }
 
 fn show_error(parent: Option<&Window>, title: &str, message: &str) {
-    let dialog = gtk4::MessageDialog::builder()
+    let alert = gtk4::AlertDialog::builder()
         .modal(true)
-        .message_type(gtk4::MessageType::Error)
-        .buttons(gtk4::ButtonsType::Ok)
-        .text(title)
-        .secondary_text(message)
+        .message(title)
+        .detail(message)
+        .buttons(["OK"])
         .build();
 
-    if let Some(window) = parent {
-        dialog.set_transient_for(Some(window));
-    }
-
-    dialog.connect_response(|d, _| d.close());
-    dialog.show();
+    alert.show(parent);
 }

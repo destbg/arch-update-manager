@@ -75,4 +75,8 @@ impl AurManagers {
             AurManagers::Shelly => vec![],
         };
     }
+
+    pub fn supports_devel(&self) -> bool {
+        return !self.devel_args().is_empty();
+    }
 }

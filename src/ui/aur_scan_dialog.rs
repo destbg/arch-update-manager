@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Dialog, Frame, Label, Orientation, PolicyType, ResponseType,
-    ScrolledWindow, Separator, Spinner, Window, WrapMode,
+    Align, Box as GtkBox, Frame, Label, Orientation, PolicyType, ScrolledWindow, Separator,
+    Spinner, Window, WrapMode,
 };
 use sourceview5::prelude::*;
 use sourceview5::{LanguageManager, View};
@@ -9,44 +9,26 @@ use sourceview5::{LanguageManager, View};
 use crate::helpers::aur_scan::scan_package;
 use crate::log_info;
 use crate::models::aur_scan_finding::AurScanFinding;
+use crate::ui::dialogs::build_dialog_window;
 use crate::ui::package_list::{prefers_dark, severity_color};
 use crate::ui::pacnew_diff::build_buffer;
 
 pub fn show_aur_scan_dialog(parent: &Window, package: &str) {
     log_info!("aur-scan results opened for {}", package);
 
-    let dialog = Dialog::builder()
-        .title(&format!("aur-scan: {}", package))
-        .transient_for(parent)
-        .modal(true)
-        .default_width(940)
-        .default_height(560)
-        .build();
-
-    let content_area = dialog.content_area();
-    content_area.set_spacing(0);
-    content_area.set_vexpand(true);
-    content_area.set_hexpand(true);
+    let (dialog, content_area) =
+        build_dialog_window(parent, &format!("aur-scan: {}", package), 940, 560);
     content_area.append(&build_loading_view(package));
-
-    dialog.add_button("Close", ResponseType::Close);
-    dialog.connect_response(|d, response| {
-        if response == ResponseType::Close || response == ResponseType::DeleteEvent {
-            d.close();
-        }
-    });
-
     dialog.present();
 
     let package_owned = package.to_string();
-    let dialog_for_async = dialog.clone();
+    let content_for_async = content_area.clone();
     glib::spawn_future_local(async move {
         let pkg = package_owned.clone();
         let result = gio::spawn_blocking(move || scan_package(&pkg)).await;
 
-        let content_area = dialog_for_async.content_area();
-        while let Some(child) = content_area.first_child() {
-            content_area.remove(&child);
+        while let Some(child) = content_for_async.first_child() {
+            content_for_async.remove(&child);
         }
 
         let body = match result {
@@ -56,7 +38,7 @@ pub fn show_aur_scan_dialog(parent: &Window, package: &str) {
             Ok(findings) => build_list_view(&findings),
             Err(_) => build_message_view("Could not run aur-scan for this package."),
         };
-        content_area.append(&body);
+        content_for_async.append(&body);
     });
 }
 

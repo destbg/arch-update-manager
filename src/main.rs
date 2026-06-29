@@ -3,8 +3,8 @@ use arch_update_manager::helpers::logger;
 use arch_update_manager::helpers::settings::load_settings;
 use arch_update_manager::log_info;
 use arch_update_manager::ui::build_ui;
+use gtk4::Application;
 use gtk4::prelude::*;
-use gtk4::{Application, ButtonsType, MessageDialog, MessageType};
 use std::env;
 use std::process::Command;
 
@@ -40,23 +40,21 @@ fn is_running_as_root() -> bool {
 }
 
 fn show_not_root_dialog_and_quit(app: &Application) {
-    let dialog = MessageDialog::builder()
+    let alert = gtk4::AlertDialog::builder()
         .modal(true)
-        .message_type(MessageType::Error)
-        .buttons(ButtonsType::Ok)
-        .text("Admin rights needed")
-        .secondary_text(
+        .message("Admin rights needed")
+        .detail(
             "Arch Update Manager needs to run with admin rights. Please launch it from your application menu, or run it with pkexec or sudo.",
         )
+        .buttons(["OK"])
         .build();
 
+    let guard = app.hold();
     let app_clone = app.clone();
-    dialog.connect_response(move |dialog, _| {
-        dialog.close();
+    alert.choose(None::<&gtk4::Window>, gio::Cancellable::NONE, move |_| {
+        drop(guard);
         app_clone.quit();
     });
-
-    dialog.show();
 }
 
 fn apply_system_theme() {

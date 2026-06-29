@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Align, ApplicationWindow, Dialog, Label, ListBox, ListBoxRow, Orientation, PolicyType,
-    ResponseType, ScrolledWindow, SelectionMode,
+    Align, ApplicationWindow, Label, ListBox, ListBoxRow, Orientation, PolicyType, ScrolledWindow,
+    SelectionMode,
 };
 use shlex::try_quote;
 use std::cell::RefCell;
@@ -11,6 +11,7 @@ use crate::helpers::pacman_cache::{list_cached_versions, package_path_to_string}
 use crate::log_info;
 use crate::models::cached_version::CachedVersion;
 use crate::ui::context_menu::reload_package_list;
+use crate::ui::dialogs::build_dialog_window;
 use crate::ui::terminal_page::run_command_in_dialog;
 
 pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_version: &str) {
@@ -31,7 +32,19 @@ pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_
         (560, 420)
     };
 
-    let dialog = Dialog::builder()
+    if other_versions.is_empty() {
+        let (dialog, content) = build_dialog_window(
+            parent,
+            &format!("Downgrade: {}", package),
+            default_width,
+            default_height,
+        );
+        content.append(&build_empty_body(package));
+        dialog.present();
+        return;
+    }
+
+    let dialog = gtk4::Window::builder()
         .title(&format!("Downgrade: {}", package))
         .transient_for(parent)
         .modal(true)
@@ -39,18 +52,7 @@ pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_
         .default_height(default_height)
         .build();
 
-    let content = dialog.content_area();
-    content.set_spacing(0);
-    content.set_vexpand(true);
-
-    if other_versions.is_empty() {
-        let body = build_empty_body(package);
-        content.append(&body);
-        dialog.add_button("Close", ResponseType::Close);
-        dialog.connect_response(|d, _| d.close());
-        dialog.show();
-        return;
-    }
+    let root = gtk4::Box::new(Orientation::Vertical, 0);
 
     let body = gtk4::Box::new(Orientation::Vertical, 8);
     body.set_margin_start(16);
@@ -88,36 +90,50 @@ pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_
     scrolled.set_vexpand(true);
     body.append(&scrolled);
 
-    content.append(&body);
+    root.append(&body);
+    root.append(&gtk4::Separator::new(Orientation::Horizontal));
 
-    dialog.add_button("Cancel", ResponseType::Cancel);
-    let install_btn = dialog.add_button("Install Selected", ResponseType::Accept);
+    let button_row = gtk4::Box::new(Orientation::Horizontal, 8);
+    button_row.set_halign(Align::End);
+    button_row.set_margin_start(8);
+    button_row.set_margin_end(8);
+    button_row.set_margin_top(8);
+    button_row.set_margin_bottom(8);
+
+    let cancel_btn = gtk4::Button::with_label("Cancel");
+    let install_btn = gtk4::Button::with_label("Install Selected");
     install_btn.add_css_class("suggested-action");
+    button_row.append(&cancel_btn);
+    button_row.append(&install_btn);
+    root.append(&button_row);
+
+    dialog.set_child(Some(&root));
+
+    let dialog_for_cancel = dialog.clone();
+    cancel_btn.connect_clicked(move |_| {
+        log_info!("downgrade dialog dismissed");
+        dialog_for_cancel.close();
+    });
 
     let versions_for_response: Rc<RefCell<Vec<CachedVersion>>> =
         Rc::new(RefCell::new(other_versions));
     let parent_clone = parent.clone();
     let list_box_clone = list_box.clone();
     let package_for_response = package.to_string();
-
-    dialog.connect_response(move |dialog, response| {
-        if response != ResponseType::Accept {
-            log_info!("downgrade dialog dismissed");
-            dialog.close();
-            return;
-        }
+    let dialog_for_install = dialog.clone();
+    install_btn.connect_clicked(move |_| {
         let Some(row) = list_box_clone.selected_row() else {
-            dialog.close();
+            dialog_for_install.close();
             return;
         };
         let idx = row.index();
         if idx < 0 {
-            dialog.close();
+            dialog_for_install.close();
             return;
         }
         let versions = versions_for_response.borrow();
         let Some(target) = versions.get(idx as usize).cloned() else {
-            dialog.close();
+            dialog_for_install.close();
             return;
         };
         drop(versions);
@@ -128,7 +144,7 @@ pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_
             package_for_response,
             target.version
         );
-        dialog.close();
+        dialog_for_install.close();
         let window_for_reload = parent_clone.clone();
         run_command_in_dialog(
             parent_clone.upcast_ref::<gtk4::Window>(),
@@ -139,7 +155,7 @@ pub fn show_downgrade_dialog(parent: &ApplicationWindow, package: &str, current_
         );
     });
 
-    dialog.show();
+    dialog.present();
 }
 
 fn build_empty_body(package: &str) -> gtk4::Box {

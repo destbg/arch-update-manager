@@ -13,12 +13,12 @@ use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::{kick_tray, trigger_check_service};
 use crate::log_info;
 use crate::models::package_update::PackageUpdate;
+use crate::ui::aur_scan_dialog::show_aur_scan_dialog;
 use crate::ui::dialogs::show_error_dialog;
 use crate::ui::downgrade_dialog::show_downgrade_dialog;
 use crate::ui::main_window::load_packages;
 use crate::ui::package_files_dialog::show_package_files_dialog;
 use crate::ui::package_list::refresh_favorite_button;
-use crate::ui::aur_scan_dialog::show_aur_scan_dialog;
 use crate::ui::pkgbuild_review_dialog::show_pkgbuild_review_dialog;
 
 pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f64, y: f64) {
