@@ -51,6 +51,16 @@ pub fn set_source_for_path(path: &str, name: &str, source: AppImageUpdateSource)
     return save_appimage_entries(&entries);
 }
 
+pub fn remove_appimage_entry(path: &str) -> Result<()> {
+    let mut entries = load_appimage_entries();
+    let before = entries.len();
+    entries.retain(|entry| entry.path != path);
+    if entries.len() == before {
+        return Ok(());
+    }
+    return save_appimage_entries(&entries);
+}
+
 pub fn shelly_db_path() -> Option<PathBuf> {
     let cache_dir = if let Ok(cache_home) = std::env::var("XDG_CACHE_HOME") {
         PathBuf::from(cache_home)

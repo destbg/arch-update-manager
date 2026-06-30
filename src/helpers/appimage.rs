@@ -3,8 +3,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::helpers::appimage_config::source_for_path;
-use crate::helpers::aur::is_command_available;
+use crate::helpers::appimage_config::{load_appimage_entries, source_for_path};
 use crate::helpers::elevated::get_original_user;
 use crate::helpers::network::http_get;
 use crate::models::appimage_update_source::AppImageUpdateSource;
@@ -16,10 +15,6 @@ use crate::models::sha1::Sha1;
 const GITHUB_API_TIMEOUT_SECS: u32 = 8;
 const ZSYNC_FETCH_TIMEOUT_SECS: u32 = 15;
 const HASH_BUFFER_SIZE: usize = 64 * 1024;
-
-pub fn is_appimage_available() -> bool {
-    return is_command_available("zsync");
-}
 
 pub fn appimage_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -60,6 +55,29 @@ pub fn discover_appimages() -> Vec<DiscoveredAppImage> {
     return found;
 }
 
+pub fn managed_appimages() -> Vec<DiscoveredAppImage> {
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for app in discover_appimages() {
+        if seen.insert(app.path.clone()) {
+            result.push(app);
+        }
+    }
+    for entry in load_appimage_entries() {
+        if !seen.insert(entry.path.clone()) {
+            continue;
+        }
+        if Path::new(&entry.path).is_file() {
+            result.push(DiscoveredAppImage {
+                path: entry.path,
+                name: entry.name,
+            });
+        }
+    }
+    result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    return result;
+}
+
 pub fn resolve_source(path: &str, name: &str) -> AppImageUpdateSource {
     if let Some(source) = source_for_path(path) {
         return source;
@@ -76,12 +94,8 @@ pub fn embedded_source(path: &str) -> AppImageUpdateSource {
 }
 
 pub fn get_appimage_updates() -> Result<Vec<PackageUpdate>> {
-    if !is_appimage_available() {
-        return Ok(Vec::new());
-    }
-
     let mut updates = Vec::new();
-    for app in discover_appimages() {
+    for app in managed_appimages() {
         let source = resolve_source(&app.path, &app.name);
         if matches!(source, AppImageUpdateSource::None) {
             continue;
@@ -90,7 +104,9 @@ pub fn get_appimage_updates() -> Result<Vec<PackageUpdate>> {
         let Some((zsync_url, new_version, source_date)) = resolve_zsync(&source) else {
             continue;
         };
-        let Some((remote_sha1, target_length, zsync_mtime)) = fetch_zsync_meta(&zsync_url) else {
+        let Some((remote_sha1, target_length, zsync_mtime, download_url)) =
+            fetch_zsync_meta(&zsync_url)
+        else {
             continue;
         };
         let Some(local_sha1) = file_sha1(&app.path) else {
@@ -100,14 +116,7 @@ pub fn get_appimage_updates() -> Result<Vec<PackageUpdate>> {
             continue;
         }
 
-        let local_size = std::fs::metadata(&app.path)
-            .map(|meta| meta.len() as i64)
-            .unwrap_or(0);
-        let size = if target_length > 0 {
-            target_length - local_size
-        } else {
-            0
-        };
+        let size = target_length.max(0);
 
         updates.push(PackageUpdate {
             source: PackageSource::AppImage,
@@ -119,7 +128,7 @@ pub fn get_appimage_updates() -> Result<Vec<PackageUpdate>> {
             new_version,
             size,
             build_date: source_date.or(zsync_mtime),
-            url: None,
+            url: Some(download_url),
             appimage_path: Some(app.path.clone()),
             ..Default::default()
         });
@@ -133,30 +142,42 @@ pub fn build_appimage_update_commands(packages: &[&PackageUpdate]) -> Vec<String
         let Some(path) = pkg.appimage_path.as_ref() else {
             continue;
         };
-        let source = resolve_source(path, &pkg.name);
-        let Some((zsync_url, _, _)) = resolve_zsync(&source) else {
+        let Some(download_url) = pkg
+            .url
+            .clone()
+            .or_else(|| resolve_download_url_for(path, &pkg.name))
+        else {
             continue;
         };
-        if let Some(command) = build_one_command(path, &zsync_url) {
+        if let Some(command) = build_one_command(&pkg.name, path, &download_url) {
             commands.push(command);
         }
     }
     return commands;
 }
 
-fn build_one_command(path: &str, zsync_url: &str) -> Option<String> {
+fn resolve_download_url_for(path: &str, name: &str) -> Option<String> {
+    let source = resolve_source(path, name);
+    let (zsync_url, _, _) = resolve_zsync(&source)?;
+    let (_, _, _, download_url) = fetch_zsync_meta(&zsync_url)?;
+    return Some(download_url);
+}
+
+fn build_one_command(name: &str, path: &str, download_url: &str) -> Option<String> {
+    let quoted_name = shlex::try_quote(name).ok()?.into_owned();
     let quoted_path = shlex::try_quote(path).ok()?.into_owned();
-    let quoted_url = shlex::try_quote(zsync_url).ok()?.into_owned();
-    let prefix = zsync_command_prefix();
+    let quoted_url = shlex::try_quote(download_url).ok()?.into_owned();
+    let prefix = appimage_command_prefix();
     return Some(format!(
-        "{prefix} zsync -i {path} -o {path} {url} && chmod +x {path} && rm -f {path}.zs-old",
+        "echo Downloading AppImage update: {name} && {prefix} curl -fSL --progress-bar -o {path}.new -- {url} && chmod +x {path}.new && mv -f -- {path}.new {path}",
+        name = quoted_name,
         prefix = prefix,
         path = quoted_path,
         url = quoted_url,
     ));
 }
 
-fn zsync_command_prefix() -> String {
+fn appimage_command_prefix() -> String {
     if let Some(user) = get_original_user() {
         if let Ok(quoted) = shlex::try_quote(&user) {
             return format!("sudo -u {}", quoted);
@@ -289,11 +310,12 @@ fn github_zsync_asset(
     return None;
 }
 
-fn fetch_zsync_meta(zsync_url: &str) -> Option<(String, i64, Option<i64>)> {
+fn fetch_zsync_meta(zsync_url: &str) -> Option<(String, i64, Option<i64>, String)> {
     let body = http_get(zsync_url, ZSYNC_FETCH_TIMEOUT_SECS).ok()?;
     let mut sha1 = None;
     let mut length = 0i64;
     let mut mtime = None;
+    let mut url_header = None;
     for line in body.lines() {
         if line.is_empty() {
             break;
@@ -304,9 +326,25 @@ fn fetch_zsync_meta(zsync_url: &str) -> Option<(String, i64, Option<i64>)> {
             length = rest.trim().parse().unwrap_or(0);
         } else if let Some(rest) = line.strip_prefix("MTime:") {
             mtime = parse_http_date(rest.trim());
+        } else if let Some(rest) = line.strip_prefix("URL:") {
+            url_header = Some(rest.trim().to_string());
         }
     }
-    return Some((sha1?, length, mtime));
+    let download_url = resolve_download_url(zsync_url, url_header.as_deref());
+    return Some((sha1?, length, mtime, download_url));
+}
+
+fn resolve_download_url(zsync_url: &str, header: Option<&str>) -> String {
+    let Some(header) = header.filter(|value| !value.is_empty()) else {
+        return zsync_url.trim_end_matches(".zsync").to_string();
+    };
+    if header.starts_with("http://") || header.starts_with("https://") {
+        return header.to_string();
+    }
+    if let Some(slash) = zsync_url.rfind('/') {
+        return format!("{}{}", &zsync_url[..slash + 1], header);
+    }
+    return header.to_string();
 }
 
 fn is_appimage_file(path: &Path) -> bool {

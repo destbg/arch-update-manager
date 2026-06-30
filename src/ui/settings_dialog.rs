@@ -5,7 +5,6 @@ use std::rc::Rc;
 
 use crate::{
     helpers::{
-        appimage::is_appimage_available,
         aur::is_command_available,
         logger::open_logs_folder,
         pacman_repos::get_repository_groups,
@@ -21,7 +20,7 @@ use crate::{
         snapshot_group::SnapshotGroup, snapshot_retention_period::SnapshotRetentionPeriod,
     },
     ui::{
-        appimage_sources_dialog::show_appimage_sources_dialog,
+        appimage_sources::build_appimage_sources_section,
         blacklist_dialog::show_manage_blacklist_dialog, dialogs::show_confirm_dialog,
         favorites_dialog::show_manage_favorites_dialog, package_list::refresh_all_favorite_buttons,
     },
@@ -51,9 +50,11 @@ pub fn show_settings_dialog(
     let (aur_enable_check, aur_combo, aur_devel_check) =
         create_aur_group(settings, &updates_container);
     let flatpak_enable_check = create_flatpak_group(settings, &updates_container);
-    let appimage_enable_check = create_appimage_group(settings, &updates_container, parent);
     let (min_update_age_spin, min_update_age_aur_only_check) =
         create_update_age_group(settings, &updates_container);
+
+    let appimage_container = build_tab_container();
+    let appimage_enable_check = create_appimage_section(settings, &appimage_container, parent);
 
     let repos_container = build_tab_container();
     let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &repos_container);
@@ -92,8 +93,9 @@ pub fn show_settings_dialog(
     let system_container = build_tab_container();
     let log_retention_spin = create_logs_group(settings, &system_container);
 
-    let categories: [(&str, &str); 7] = [
+    let categories: [(&str, &str); 8] = [
         ("Updates", "software-update-available-symbolic"),
+        ("AppImages", "application-x-executable-symbolic"),
         ("Repositories", "drive-harddisk-symbolic"),
         ("Snapshots & Cache", "document-save-symbolic"),
         (
@@ -107,6 +109,7 @@ pub fn show_settings_dialog(
 
     let containers = [
         updates_container,
+        appimage_container,
         repos_container,
         maintenance_container,
         tray_container,
@@ -1367,48 +1370,29 @@ fn create_flatpak_group(settings: &AppSettings, main_container: &gtk4::Box) -> g
     return check;
 }
 
-fn create_appimage_group(
+fn create_appimage_section(
     settings: &AppSettings,
     main_container: &gtk4::Box,
     parent: &ApplicationWindow,
 ) -> gtk4::CheckButton {
     let section = create_preference_group(
         "AppImage Packages",
-        "Show updates for your AppImages next to system packages. You choose where each AppImage checks for new versions.",
+        "Show updates for your AppImages next to system packages.",
     );
-
-    let appimage_present = is_appimage_available();
 
     let check = gtk4::CheckButton::with_label("Enable AppImage support");
     check.add_css_class("settings-check");
-    check.set_active(settings.enable_appimage_support && appimage_present);
-    check.set_sensitive(appimage_present);
+    check.set_active(settings.enable_appimage_support);
 
     section.append(&check);
-
-    let sources_btn = gtk4::Button::with_label("Set update sources...");
-    sources_btn.set_halign(gtk4::Align::Start);
-    sources_btn.set_margin_top(12);
-    sources_btn.set_sensitive(appimage_present);
-    let parent_for_sources = parent.clone();
-    sources_btn.connect_clicked(move |_| {
-        show_appimage_sources_dialog(&parent_for_sources);
-    });
-    section.append(&sources_btn);
-
-    if !appimage_present {
-        let warning = gtk4::Label::new(Some(
-            "The zsync command is not installed on this system. Install the zsync package to use this feature.",
-        ));
-        warning.set_wrap(true);
-        warning.set_xalign(0.0);
-        warning.set_margin_top(8);
-        warning.add_css_class("dim-label");
-        warning.add_css_class("caption");
-        section.append(&warning);
-    }
-
     main_container.append(&section);
+
+    let sources_section = create_preference_group(
+        "Update Sources",
+        "Pick where each AppImage looks for new versions. AppImages with no source are not checked.",
+    );
+    sources_section.append(&build_appimage_sources_section(parent));
+    main_container.append(&sources_section);
 
     return check;
 }

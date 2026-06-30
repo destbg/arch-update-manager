@@ -133,11 +133,7 @@ fn default_enable_flatpak_support() -> bool {
 }
 
 fn default_enable_appimage_support() -> bool {
-    return std::process::Command::new("which")
-        .arg("zsync")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
+    return true;
 }
 
 fn default_keep_old_packages() -> u32 {
