@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::constants::AUR_NAME;
+use crate::models::package_source::PackageSource;
 use crate::models::repo_switch::{RepoSwitch, SwitchKind};
 
 pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
@@ -62,7 +62,7 @@ pub fn detect_repo_switches() -> Result<Vec<RepoSwitch>> {
             switches.push(RepoSwitch {
                 kind: SwitchKind::RepoChange,
                 installed_name: name.to_string(),
-                installed_repo: AUR_NAME.to_string(),
+                installed_repo: PackageSource::Aur.label().to_string(),
                 installed_version: version_str.clone(),
                 target_name: name.to_string(),
                 target_repo,

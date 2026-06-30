@@ -1,3 +1,5 @@
+pub mod appimage;
+pub mod appimage_config;
 pub mod arch_news;
 pub mod aur;
 pub mod aur_maintainers;

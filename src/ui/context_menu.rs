@@ -4,7 +4,6 @@ use gtk4::{
     Align, ApplicationWindow, Box as GtkBox, Button, Orientation, Popover, PositionType, Widget,
 };
 
-use crate::constants::{AUR_NAME, FLATPAK_NAME};
 use crate::helpers::elevated::open_url_as_user;
 use crate::helpers::pacman_ignore::{
     add_to_ignore_pkg, is_in_managed_ignore_pkg, remove_from_ignore_pkg,
@@ -12,6 +11,7 @@ use crate::helpers::pacman_ignore::{
 use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::{kick_tray, trigger_check_service};
 use crate::log_info;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::aur_scan_dialog::show_aur_scan_dialog;
 use crate::ui::dialogs::show_error_dialog;
@@ -42,8 +42,9 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
     vbox.set_margin_start(4);
     vbox.set_margin_end(4);
 
-    let is_aur = package.repository == AUR_NAME;
-    let is_flatpak = package.repository == FLATPAK_NAME;
+    let is_aur = package.source == PackageSource::Aur;
+    let is_external =
+        package.source == PackageSource::Flatpak || package.source == PackageSource::AppImage;
 
     add_action(&vbox, &popover, "Copy package name", {
         let name = package.name.clone();
@@ -78,7 +79,7 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
                 }
             });
         }
-    } else if !is_flatpak {
+    } else if !is_external {
         add_action(&vbox, &popover, "Open Arch package page", {
             let name = package.name.clone();
             move || {
@@ -87,7 +88,7 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
         });
     }
 
-    if !is_flatpak {
+    if !is_external {
         add_action(&vbox, &popover, "View files", {
             let name = package.name.clone();
             let window = window.clone();
@@ -118,7 +119,7 @@ pub fn show_package_context_menu(anchor: &Widget, package: &PackageUpdate, x: f6
         },
     );
 
-    if !is_flatpak {
+    if !is_external {
         let is_blacklisted = is_in_managed_ignore_pkg(&package.name);
         add_action(
             &vbox,

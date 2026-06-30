@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::{
     helpers::{
+        appimage::is_appimage_available,
         aur::is_command_available,
         logger::open_logs_folder,
         pacman_repos::get_repository_groups,
@@ -20,6 +21,7 @@ use crate::{
         snapshot_group::SnapshotGroup, snapshot_retention_period::SnapshotRetentionPeriod,
     },
     ui::{
+        appimage_sources_dialog::show_appimage_sources_dialog,
         blacklist_dialog::show_manage_blacklist_dialog, dialogs::show_confirm_dialog,
         favorites_dialog::show_manage_favorites_dialog, package_list::refresh_all_favorite_buttons,
     },
@@ -49,6 +51,7 @@ pub fn show_settings_dialog(
     let (aur_enable_check, aur_combo, aur_devel_check) =
         create_aur_group(settings, &updates_container);
     let flatpak_enable_check = create_flatpak_group(settings, &updates_container);
+    let appimage_enable_check = create_appimage_group(settings, &updates_container, parent);
     let (min_update_age_spin, min_update_age_aur_only_check) =
         create_update_age_group(settings, &updates_container);
 
@@ -82,12 +85,14 @@ pub fn show_settings_dialog(
     let remember_unselected_check =
         create_remember_unselected_group(settings, &appearance_container);
 
+    let topbar_container = build_tab_container();
+    let news_check = create_news_group(settings, &topbar_container);
+    let mirror_refresh_check = create_mirror_group(settings, &topbar_container);
+
     let system_container = build_tab_container();
-    let news_check = create_news_group(settings, &system_container);
-    let mirror_refresh_check = create_mirror_group(settings, &system_container);
     let log_retention_spin = create_logs_group(settings, &system_container);
 
-    let categories: [(&str, &str); 6] = [
+    let categories: [(&str, &str); 7] = [
         ("Updates", "software-update-available-symbolic"),
         ("Repositories", "drive-harddisk-symbolic"),
         ("Snapshots & Cache", "document-save-symbolic"),
@@ -96,6 +101,7 @@ pub fn show_settings_dialog(
             "preferences-system-notifications-symbolic",
         ),
         ("Appearance", "preferences-desktop-appearance-symbolic"),
+        ("Top Bar", "open-menu-symbolic"),
         ("System", "emblem-system-symbolic"),
     ];
 
@@ -105,6 +111,7 @@ pub fn show_settings_dialog(
         maintenance_container,
         tray_container,
         appearance_container,
+        topbar_container,
         system_container,
     ];
 
@@ -339,6 +346,11 @@ pub fn show_settings_dialog(
     flatpak_enable_check.connect_toggled(move |check| {
         let value = check.is_active();
         update_settings(move |s| s.enable_flatpak_support = value);
+    });
+
+    appimage_enable_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.enable_appimage_support = value);
     });
 
     keep_old_spin.connect_value_changed(move |spin| {
@@ -622,9 +634,7 @@ fn update_devel_sensitivity(
             "Also check git, svn, and bzr packages for new commits, not just version bumps.",
         ));
     } else {
-        devel_check.set_tooltip_text(Some(
-            "The selected AUR helper does not support devel mode.",
-        ));
+        devel_check.set_tooltip_text(Some("The selected AUR helper does not support devel mode."));
     }
 }
 
@@ -1343,6 +1353,52 @@ fn create_flatpak_group(settings: &AppSettings, main_container: &gtk4::Box) -> g
     if !flatpak_present {
         let warning = gtk4::Label::new(Some(
             "The flatpak command is not installed on this system. Install the flatpak package to use this feature.",
+        ));
+        warning.set_wrap(true);
+        warning.set_xalign(0.0);
+        warning.set_margin_top(8);
+        warning.add_css_class("dim-label");
+        warning.add_css_class("caption");
+        section.append(&warning);
+    }
+
+    main_container.append(&section);
+
+    return check;
+}
+
+fn create_appimage_group(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+    parent: &ApplicationWindow,
+) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "AppImage Packages",
+        "Show updates for your AppImages next to system packages. You choose where each AppImage checks for new versions.",
+    );
+
+    let appimage_present = is_appimage_available();
+
+    let check = gtk4::CheckButton::with_label("Enable AppImage support");
+    check.add_css_class("settings-check");
+    check.set_active(settings.enable_appimage_support && appimage_present);
+    check.set_sensitive(appimage_present);
+
+    section.append(&check);
+
+    let sources_btn = gtk4::Button::with_label("Set update sources...");
+    sources_btn.set_halign(gtk4::Align::Start);
+    sources_btn.set_margin_top(12);
+    sources_btn.set_sensitive(appimage_present);
+    let parent_for_sources = parent.clone();
+    sources_btn.connect_clicked(move |_| {
+        show_appimage_sources_dialog(&parent_for_sources);
+    });
+    section.append(&sources_btn);
+
+    if !appimage_present {
+        let warning = gtk4::Label::new(Some(
+            "The zsync command is not installed on this system. Install the zsync package to use this feature.",
         ));
         warning.set_wrap(true);
         warning.set_xalign(0.0);

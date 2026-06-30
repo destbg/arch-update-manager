@@ -170,13 +170,13 @@ fn show_warning_dialog(title: &str, text: &str) -> bool {
 }
 
 fn run_dialog(program: &str, args: &[&str]) -> Option<bool> {
-    match std::process::Command::new(program).args(args).status() {
+    return match std::process::Command::new(program).args(args).status() {
         Ok(status) => Some(status.success()),
         Err(e) => {
             eprintln!("Failed to run {}: {}", program, e);
             None
         }
-    }
+    };
 }
 
 fn which(program: &str) -> bool {
@@ -245,6 +245,7 @@ fn count_favorite_updates(state: &TrayState, settings: &AppSettings) -> usize {
         .iter()
         .chain(state.aur.iter())
         .chain(state.flatpak.iter())
+        .chain(state.appimage.iter())
         .filter(|line| settings.is_favorite(package_name_from_entry(line)))
         .count();
 }
@@ -333,9 +334,14 @@ impl Tray for ArchUpdateTray {
         } else {
             self.state.flatpak.clone()
         };
+        let appimage = if filter_to_favorites {
+            filter_favorite_entries(&self.state.appimage, &settings)
+        } else {
+            self.state.appimage.clone()
+        };
 
         let snooze_until = current_snooze_until();
-        let visible_total = packages.len() + aur.len() + flatpak.len();
+        let visible_total = packages.len() + aur.len() + flatpak.len() + appimage.len();
         let count_label = if let Some(until) = snooze_until {
             let local: DateTime<Local> = until.into();
             format!("Snoozed until {}", local.format("%d %b %H:%M"))
@@ -376,6 +382,14 @@ impl Tray for ArchUpdateTray {
             items.push(make_submenu(
                 &format!("Flatpak ({})", flatpak.len()),
                 &flatpak,
+                filter_to_favorites,
+            ));
+        }
+
+        if !appimage.is_empty() {
+            items.push(make_submenu(
+                &format!("AppImage ({})", appimage.len()),
+                &appimage,
                 filter_to_favorites,
             ));
         }
@@ -639,7 +653,8 @@ fn same_state(a: &TrayState, b: &TrayState) -> bool {
     return a.last_check == b.last_check
         && a.packages == b.packages
         && a.aur == b.aur
-        && a.flatpak == b.flatpak;
+        && a.flatpak == b.flatpak
+        && a.appimage == b.appimage;
 }
 
 fn fire_notification(count: usize) {

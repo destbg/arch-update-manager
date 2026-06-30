@@ -1,8 +1,10 @@
 use crate::models::aur_scan_finding::AurScanFinding;
 use crate::models::flatpak_installation::FlatpakInstallation;
+use crate::models::package_source::PackageSource;
 
 #[derive(Clone, Debug)]
 pub struct PackageUpdate {
+    pub source: PackageSource,
     pub repository: String,
     pub selected: bool,
     pub name: String,
@@ -26,6 +28,7 @@ pub struct PackageUpdate {
     pub pkgbuild_needs_review: bool,
     pub aur_scan_findings: Vec<AurScanFinding>,
     pub flatpak_installation: Option<FlatpakInstallation>,
+    pub appimage_path: Option<String>,
 }
 
 impl PackageUpdate {
@@ -45,7 +48,8 @@ impl PackageUpdate {
 
 impl Default for PackageUpdate {
     fn default() -> Self {
-        Self {
+        return Self {
+            source: PackageSource::Official,
             repository: String::new(),
             selected: false,
             name: String::new(),
@@ -69,6 +73,7 @@ impl Default for PackageUpdate {
             pkgbuild_needs_review: false,
             aur_scan_findings: Vec::new(),
             flatpak_installation: None,
-        }
+            appimage_path: None,
+        };
     }
 }

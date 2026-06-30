@@ -1,4 +1,5 @@
-use crate::constants::{AUR_NAME, FLATPAK_NAME, TIMESHIFT_COMMENT};
+use crate::constants::TIMESHIFT_COMMENT;
+use crate::helpers::appimage::build_appimage_update_commands;
 use crate::helpers::aur::install_aur_packages;
 use crate::helpers::disk_space::available_bytes;
 use crate::helpers::elevated::open_url_as_user;
@@ -13,6 +14,7 @@ use crate::helpers::terminal::spawn_terminal;
 use crate::helpers::timeshift::{cleanup_timeshift_snapshots, create_timeshift_snapshot};
 use crate::log_info;
 use crate::models::package_object::PackageUpdateObject;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::dialogs::{
     create_progress_dialog, show_confirm_dialog, show_error_dialog, show_partial_upgrade_dialog,
@@ -427,7 +429,7 @@ fn select_all_official(store: &ListStore) {
             continue;
         };
         let data = item.data();
-        if data.repository != AUR_NAME && data.repository != FLATPAK_NAME {
+        if data.source == PackageSource::Official {
             item.set_selected(true);
         }
     }
@@ -454,28 +456,29 @@ fn install_selected_packages_ui(
     let mut official_packages = Vec::new();
     let mut aur_packages = Vec::new();
     let mut flatpak_packages = Vec::new();
+    let mut appimage_packages = Vec::new();
     let n_items = store.n_items();
 
     for i in 0..n_items {
         if let Some(item) = store.item(i).and_downcast::<PackageUpdateObject>() {
             let data = item.data();
             if data.selected {
-                if data.repository == AUR_NAME {
-                    aur_packages.push(data);
-                } else if data.repository == FLATPAK_NAME {
-                    flatpak_packages.push(data);
-                } else {
-                    official_packages.push(data);
+                match data.source {
+                    PackageSource::Aur => aur_packages.push(data),
+                    PackageSource::Flatpak => flatpak_packages.push(data),
+                    PackageSource::AppImage => appimage_packages.push(data),
+                    PackageSource::Official => official_packages.push(data),
                 }
             }
         }
     }
 
     log_info!(
-        "install starting: official={}, aur={}, flatpak={}, snapshot={}, snapper={}",
+        "install starting: official={}, aur={}, flatpak={}, appimage={}, snapshot={}, snapper={}",
         official_packages.len(),
         aur_packages.len(),
         flatpak_packages.len(),
+        appimage_packages.len(),
         create_snapshot,
         create_snapper
     );
@@ -483,13 +486,18 @@ fn install_selected_packages_ui(
         .iter()
         .chain(aur_packages.iter())
         .chain(flatpak_packages.iter())
+        .chain(appimage_packages.iter())
         .map(|p| p.name.as_str())
         .collect();
     if !pkg_names.is_empty() {
         log_info!("packages selected: {}", pkg_names.join(", "));
     }
 
-    if official_packages.is_empty() && aur_packages.is_empty() && flatpak_packages.is_empty() {
+    if official_packages.is_empty()
+        && aur_packages.is_empty()
+        && flatpak_packages.is_empty()
+        && appimage_packages.is_empty()
+    {
         return Ok(());
     }
 
@@ -504,6 +512,7 @@ fn install_selected_packages_ui(
             official_packages.clone(),
             aur_packages.clone(),
             flatpak_packages.clone(),
+            appimage_packages.clone(),
             window.clone(),
             progress_dialog,
             create_snapper,
@@ -517,6 +526,7 @@ fn install_selected_packages_ui(
         official_packages,
         aur_packages,
         flatpak_packages,
+        appimage_packages,
         create_snapper,
     ) {
         show_error_dialog(
@@ -532,6 +542,7 @@ fn execute_timeshift_operations_async(
     official_packages: Vec<PackageUpdate>,
     aur_packages: Vec<PackageUpdate>,
     flatpak_packages: Vec<PackageUpdate>,
+    appimage_packages: Vec<PackageUpdate>,
     window: ApplicationWindow,
     progress_dialog: gtk4::Window,
     create_snapper: bool,
@@ -540,6 +551,7 @@ fn execute_timeshift_operations_async(
     let official_packages_clone = official_packages.clone();
     let aur_packages_clone = aur_packages.clone();
     let flatpak_packages_clone = flatpak_packages.clone();
+    let appimage_packages_clone = appimage_packages.clone();
     let settings = load_settings();
 
     thread::spawn(move || match create_timeshift_snapshot(TIMESHIFT_COMMENT) {
@@ -565,6 +577,7 @@ fn execute_timeshift_operations_async(
                 official_packages_clone.clone(),
                 aur_packages_clone.clone(),
                 flatpak_packages_clone.clone(),
+                appimage_packages_clone.clone(),
                 create_snapper,
             ) {
                 show_error_dialog(
@@ -631,6 +644,7 @@ fn start_installation_in_terminal(
     official_packages: Vec<PackageUpdate>,
     aur_packages: Vec<PackageUpdate>,
     flatpak_packages: Vec<PackageUpdate>,
+    appimage_packages: Vec<PackageUpdate>,
     create_snapper: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let settings = load_settings();
@@ -741,13 +755,25 @@ exit $expect_status)"#,
         None
     };
 
+    let appimage_cmd = if !appimage_packages.is_empty() {
+        let refs: Vec<&PackageUpdate> = appimage_packages.iter().collect();
+        let commands = build_appimage_update_commands(&refs);
+        if commands.is_empty() {
+            None
+        } else {
+            Some(commands.join(" && "))
+        }
+    } else {
+        None
+    };
+
     let snapper_cmd = if create_snapper {
         Some(build_snapper_snapshot_command())
     } else {
         None
     };
 
-    let parts: Vec<String> = [snapper_cmd, pacman_cmd, aur_cmd, flatpak_cmd]
+    let parts: Vec<String> = [snapper_cmd, pacman_cmd, aur_cmd, flatpak_cmd, appimage_cmd]
         .into_iter()
         .flatten()
         .collect();
@@ -769,6 +795,7 @@ fn navigate_to_terminal_and_install(
     official_packages: Vec<PackageUpdate>,
     aur_packages: Vec<PackageUpdate>,
     flatpak_packages: Vec<PackageUpdate>,
+    appimage_packages: Vec<PackageUpdate>,
     create_snapper: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(main_box) = window.child().and_downcast::<GtkBox>() else {
@@ -794,6 +821,7 @@ fn navigate_to_terminal_and_install(
         official_packages,
         aur_packages,
         flatpak_packages,
+        appimage_packages,
         create_snapper,
     )?;
 

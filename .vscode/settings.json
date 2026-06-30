@@ -2,6 +2,8 @@
     "cSpell.words": [
         "activatable",
         "alpm",
+        "appimage",
+        "appimages",
         "autoselect",
         "chrono",
         "dbus",
@@ -19,14 +21,17 @@
         "PKGBUILD",
         "scrollback",
         "serde",
+        "shlex",
         "syncdb",
         "syncdbs",
         "timeshift",
         "titlebar",
+        "topbar",
         "trizen",
         "vercmp",
         "vexpand",
         "xalign",
-        "yalign"
+        "yalign",
+        "Zsync"
     ]
 }
