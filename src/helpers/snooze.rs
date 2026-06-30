@@ -48,9 +48,9 @@ pub fn clear_snooze() -> Result<()> {
     let Some(path) = snooze_file() else {
         return Ok(());
     };
-    match fs::remove_file(&path) {
+    return match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(anyhow::Error::from(e).context("Failed to remove snooze file")),
-    }
+    };
 }

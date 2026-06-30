@@ -146,7 +146,7 @@ pub fn restart_service(service: &str) -> ServiceRestartOutcome {
         .args(&["restart", service])
         .output();
 
-    match output {
+    return match output {
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr).to_string();
             let stdout = String::from_utf8_lossy(&o.stdout).to_string();
@@ -163,7 +163,7 @@ pub fn restart_service(service: &str) -> ServiceRestartOutcome {
             stdout: String::new(),
             stderr: format!("Could not run systemctl: {}", e),
         },
-    }
+    };
 }
 
 pub fn is_kernel_reboot_pending() -> bool {

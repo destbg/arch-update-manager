@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use alpm::vercmp;
 
-use crate::constants::{AUR_NAME, FLATPAK_NAME};
 use crate::helpers::elevated::chown_to_user;
 use crate::helpers::installed_packages::get_all_installed_packages;
 use crate::helpers::network::http_get;
 use crate::helpers::tray_state::state_dir;
 use crate::models::open_vulnerability::OpenVulnerability;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 use crate::models::security_fix::SecurityFix;
 
@@ -33,7 +33,7 @@ pub fn enrich_with_security(updates: &mut [PackageUpdate]) {
     }
 
     for update in updates.iter_mut() {
-        if update.repository == AUR_NAME || update.repository == FLATPAK_NAME {
+        if update.source != PackageSource::Official {
             continue;
         }
         let Some(groups) = fixes.get(&update.name) else {

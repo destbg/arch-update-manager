@@ -1,9 +1,10 @@
-use crate::constants::{AUR_NAME, is_own_package};
+use crate::constants::is_own_package;
 use crate::helpers::settings::{load_settings, save_settings};
 use crate::helpers::tray_integration::kick_tray;
 use crate::helpers::unselected_packages::save_unselected_packages;
 use crate::log_info;
 use crate::models::package_object::PackageUpdateObject;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 use crate::ui::context_menu::show_package_context_menu;
 use gio::ListStore;
@@ -507,7 +508,7 @@ fn create_repository_column(column_view: &ColumnView) {
 
         label.set_text(&data.repository);
 
-        if data.repository == AUR_NAME {
+        if data.source == PackageSource::Aur {
             label.set_markup(&format!("<b>{}</b>", &data.repository));
         } else if data.repository.contains("extra") {
             label.add_css_class("dim-label");

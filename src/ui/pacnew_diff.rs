@@ -238,13 +238,13 @@ fn strip_pacnew_suffix(path: &str) -> String {
 }
 
 fn read_file_or_warn(path: &str) -> String {
-    match fs::read_to_string(path) {
+    return match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Could not read {}: {}", path, e);
             String::new()
         }
-    }
+    };
 }
 
 fn guess_language(path: &str) -> Option<sourceview5::Language> {

@@ -11,6 +11,6 @@ pub enum SnapshotRetentionPeriod {
 
 impl Default for SnapshotRetentionPeriod {
     fn default() -> Self {
-        SnapshotRetentionPeriod::Forever
+        return SnapshotRetentionPeriod::Forever;
     }
 }

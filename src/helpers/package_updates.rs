@@ -7,21 +7,23 @@ use std::fmt::{Display, Formatter};
 use std::process::Command;
 use std::{error, fmt};
 
+use crate::helpers::appimage::get_appimage_updates;
 use crate::helpers::aur::get_aur_updates;
 use crate::helpers::flatpak::get_flatpak_updates;
 use crate::helpers::security::enrich_with_security;
 use crate::helpers::settings::load_settings;
 use crate::models::package_info::PackageInfo;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 use crate::models::update_error::UpdateError;
 
 impl Display for UpdateError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
+        return match self {
             UpdateError::CommandFailed(msg) => write!(f, "Command failed: {}", msg),
             UpdateError::IoError(msg) => write!(f, "IO error: {}", msg),
             UpdateError::SyncFailed(msg) => write!(f, "Database sync failed: {}", msg),
-        }
+        };
     }
 }
 
@@ -29,13 +31,13 @@ impl error::Error for UpdateError {}
 
 impl From<std::io::Error> for UpdateError {
     fn from(error: std::io::Error) -> Self {
-        UpdateError::IoError(error.to_string())
+        return UpdateError::IoError(error.to_string());
     }
 }
 
 impl From<anyhow::Error> for UpdateError {
     fn from(error: anyhow::Error) -> Self {
-        UpdateError::IoError(error.to_string())
+        return UpdateError::IoError(error.to_string());
     }
 }
 
@@ -133,6 +135,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
             let build_date = build_dates_map.get(&package_name).copied();
 
             updates.push(PackageUpdate {
+                source: PackageSource::Official,
                 name: package_name,
                 new_version,
                 current_version,
@@ -156,6 +159,7 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
                 pkgbuild_needs_review: false,
                 aur_scan_findings: Vec::new(),
                 flatpak_installation: None,
+                appimage_path: None,
             });
         }
 
@@ -186,6 +190,17 @@ pub fn get_package_updates() -> Result<Vec<PackageUpdate>, UpdateError> {
             }
             Err(e) => {
                 eprintln!("Warning: Failed to get Flatpak updates: {}", e);
+            }
+        }
+    }
+
+    if settings.enable_appimage_support {
+        match get_appimage_updates() {
+            Ok(mut appimage_updates) => {
+                updates.append(&mut appimage_updates);
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to get AppImage updates: {}", e);
             }
         }
     }

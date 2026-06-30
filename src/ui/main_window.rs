@@ -1,4 +1,3 @@
-use crate::constants::{AUR_NAME, FLATPAK_NAME};
 use crate::helpers::arch_news::news_to_show;
 use crate::helpers::decorations::are_decorations_disabled;
 use crate::helpers::elevated::open_url_as_user;
@@ -15,6 +14,7 @@ use crate::helpers::unselected_packages::load_unselected_packages;
 use crate::log_info;
 use crate::models::info_panel::InfoPanel;
 use crate::models::package_object::PackageUpdateObject;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 use crate::models::post_update_page::PostUpdatePage;
 use crate::models::update_error::UpdateError;
@@ -363,7 +363,7 @@ fn create_main_content(
                 let package_data = package_obj.data();
                 info_container.set_visible(true);
                 title_label.set_markup(&info_title_markup(&package_data));
-                if package_data.repository == AUR_NAME {
+                if package_data.source == PackageSource::Aur {
                     let mut parts: Vec<String> = Vec::new();
                     if let Some(ts) = package_data.first_submitted {
                         parts.push(format!("Created {}", format_age(ts)));
@@ -429,10 +429,11 @@ fn create_main_content(
                 *current_release_notes_url.borrow_mut() = release_url;
 
                 *current_package.borrow_mut() = Some(package_data.name.clone());
-                pkgbuild_button.set_visible(package_data.repository == AUR_NAME);
+                pkgbuild_button.set_visible(package_data.source == PackageSource::Aur);
                 aur_scan_button.set_visible(!package_data.aur_scan_findings.is_empty());
-                let is_flatpak = package_data.repository == FLATPAK_NAME;
-                if is_flatpak {
+                let is_external = package_data.source == PackageSource::Flatpak
+                    || package_data.source == PackageSource::AppImage;
+                if is_external {
                     ignore_button.set_visible(false);
                 } else {
                     let is_ignored = is_in_managed_ignore_pkg(&package_data.name);
@@ -622,10 +623,10 @@ fn find_column(window: &ApplicationWindow, index: u32) -> Option<ColumnViewColum
         .and_downcast::<Paned>()?;
     let scrolled = paned.start_child().and_downcast::<ScrolledWindow>()?;
     let column_view = scrolled.child().and_downcast::<ColumnView>()?;
-    column_view
+    return column_view
         .columns()
         .item(index)
-        .and_downcast::<ColumnViewColumn>()
+        .and_downcast::<ColumnViewColumn>();
 }
 
 pub fn find_package_store(window: &ApplicationWindow) -> Option<ListStore> {
@@ -675,7 +676,7 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                     let cutoff = chrono::Utc::now().timestamp()
                         - (age_settings.min_update_age_days as i64) * 86_400;
                     packages.retain(|p| {
-                        if aur_only && p.repository != AUR_NAME {
+                        if aur_only && p.source != PackageSource::Aur {
                             return true;
                         }
                         match p.build_date {
@@ -731,8 +732,8 @@ pub fn load_packages(stack: Stack, content_box: GtkBox, window: ApplicationWindo
                 packages.sort_by(|a, b| {
                     let a_fav = settings.enable_favorites && settings.is_favorite(&a.name);
                     let b_fav = settings.enable_favorites && settings.is_favorite(&b.name);
-                    let a_aur = a.repository == AUR_NAME;
-                    let b_aur = b.repository == AUR_NAME;
+                    let a_aur = a.source == PackageSource::Aur;
+                    let b_aur = b.source == PackageSource::Aur;
                     return b_fav.cmp(&a_fav).then_with(|| b_aur.cmp(&a_aur));
                 });
 

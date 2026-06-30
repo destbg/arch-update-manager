@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use chrono::Utc;
 
-use crate::constants::{AUR_NAME, FLATPAK_NAME};
 use crate::helpers::elevated::chown_to_user;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 use crate::models::tray_state::TrayState;
 
@@ -31,18 +31,18 @@ pub fn build_tray_state(packages: &[PackageUpdate]) -> TrayState {
         packages: Vec::new(),
         aur: Vec::new(),
         flatpak: Vec::new(),
+        appimage: Vec::new(),
     };
     for pkg in packages {
         let entry = format!(
             "{} {} -> {}",
             pkg.name, pkg.current_version, pkg.new_version
         );
-        if pkg.repository == AUR_NAME {
-            state.aur.push(entry);
-        } else if pkg.repository == FLATPAK_NAME {
-            state.flatpak.push(entry);
-        } else {
-            state.packages.push(entry);
+        match pkg.source {
+            PackageSource::Aur => state.aur.push(entry),
+            PackageSource::Flatpak => state.flatpak.push(entry),
+            PackageSource::AppImage => state.appimage.push(entry),
+            PackageSource::Official => state.packages.push(entry),
         }
     }
     return state;

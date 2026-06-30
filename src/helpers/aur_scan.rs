@@ -2,12 +2,12 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::OnceLock;
 
-use crate::constants::AUR_NAME;
 use crate::helpers::aur::url_encode;
 use crate::helpers::aur_pkgbuild::find_clone_dir;
 use crate::helpers::elevated::get_original_user;
 use crate::helpers::network::http_get;
 use crate::models::aur_scan_finding::AurScanFinding;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 
 const AUR_SCAN_BIN: &str = "aur-scan";
@@ -30,7 +30,7 @@ pub fn enrich_with_aur_scan(updates: &mut [PackageUpdate]) {
         return;
     }
     for update in updates.iter_mut() {
-        if update.repository != AUR_NAME {
+        if update.source != PackageSource::Aur {
             continue;
         }
         update.aur_scan_findings = scan_package(&update.name);

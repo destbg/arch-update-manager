@@ -7,13 +7,13 @@ use crate::models::snapshot_retention_period::SnapshotRetentionPeriod;
 
 impl Display for SnapshotRetentionPeriod {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
+        return match self {
             SnapshotRetentionPeriod::Forever => write!(f, "Forever"),
             SnapshotRetentionPeriod::Day => write!(f, "1 Day"),
             SnapshotRetentionPeriod::Week => write!(f, "1 Week"),
             SnapshotRetentionPeriod::Month => write!(f, "1 Month"),
             SnapshotRetentionPeriod::Year => write!(f, "1 Year"),
-        }
+        };
     }
 }
 
@@ -42,6 +42,8 @@ pub struct AppSettings {
     pub favorites_exclusion_mode: bool,
     #[serde(default = "default_enable_flatpak_support")]
     pub enable_flatpak_support: bool,
+    #[serde(default = "default_enable_appimage_support")]
+    pub enable_appimage_support: bool,
     #[serde(default)]
     pub enable_devel_aur: bool,
     #[serde(default = "default_keep_old_packages")]
@@ -128,6 +130,10 @@ fn default_enable_flatpak_support() -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false);
+}
+
+fn default_enable_appimage_support() -> bool {
+    return true;
 }
 
 fn default_keep_old_packages() -> u32 {

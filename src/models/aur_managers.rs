@@ -21,7 +21,7 @@ impl AurManagers {
     }
 
     pub fn from_command(command: &str) -> Option<Self> {
-        match command {
+        return match command {
             "yay" => Some(AurManagers::Yay),
             "paru" => Some(AurManagers::Paru),
             "trizen" => Some(AurManagers::Trizen),
@@ -29,7 +29,7 @@ impl AurManagers {
             "pamac" => Some(AurManagers::PamacCli),
             "shelly" => Some(AurManagers::Shelly),
             _ => None,
-        }
+        };
     }
 
     pub fn update_check_args(&self) -> Vec<&'static str> {

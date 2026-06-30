@@ -33,7 +33,7 @@ impl PackageUpdateObject {
     }
 
     pub fn data(&self) -> PackageUpdate {
-        self.imp().data.borrow().clone()
+        return self.imp().data.borrow().clone();
     }
 
     pub fn set_selected(&self, selected: bool) {

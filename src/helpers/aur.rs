@@ -1,5 +1,4 @@
 use crate::{
-    constants::AUR_NAME,
     helpers::aur_maintainers::{read_maintainers, write_maintainers},
     helpers::aur_pkgbuild::pkgbuild_needs_review,
     helpers::aur_scan::enrich_with_aur_scan,
@@ -7,8 +6,8 @@ use crate::{
     helpers::network::http_get,
     helpers::settings::{get_effective_aur_helper, load_settings},
     models::{
-        aur_info::AurInfo, aur_managers::AurManagers, package_update::PackageUpdate,
-        shelly_update::ShellyUpdate,
+        aur_info::AurInfo, aur_managers::AurManagers, package_source::PackageSource,
+        package_update::PackageUpdate, shelly_update::ShellyUpdate,
     },
 };
 use anyhow::{Context, Result};
@@ -323,7 +322,8 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
     return Ok(entries
         .into_iter()
         .map(|e| PackageUpdate {
-            repository: AUR_NAME.to_string(),
+            source: PackageSource::Aur,
+            repository: PackageSource::Aur.label().to_string(),
             selected: true,
             description: format!("AUR package: {}", e.name),
             url: Some(format!("https://aur.archlinux.org/packages/{}", e.name)),
@@ -346,6 +346,7 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
             pkgbuild_needs_review: false,
             aur_scan_findings: Vec::new(),
             flatpak_installation: None,
+            appimage_path: None,
         })
         .collect());
 }
@@ -359,7 +360,8 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
         let new_version = parts[parts.len() - 1].to_string();
 
         return Ok(Some(PackageUpdate {
-            repository: AUR_NAME.to_string(),
+            source: PackageSource::Aur,
+            repository: PackageSource::Aur.label().to_string(),
             selected: true,
             name: package_name.clone(),
             description: format!("AUR package: {}", package_name),
@@ -385,6 +387,7 @@ fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
             pkgbuild_needs_review: false,
             aur_scan_findings: Vec::new(),
             flatpak_installation: None,
+            appimage_path: None,
         }));
     }
 
@@ -404,7 +407,8 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
         let new_version = parts[2].to_string();
 
         return Ok(Some(PackageUpdate {
-            repository: AUR_NAME.to_string(),
+            source: PackageSource::Aur,
+            repository: PackageSource::Aur.label().to_string(),
             selected: true,
             name: package_name.clone(),
             description: format!("AUR package: {}", package_name),
@@ -430,6 +434,7 @@ fn parse_pamac_line(line: &str) -> Result<Option<PackageUpdate>> {
             pkgbuild_needs_review: false,
             aur_scan_findings: Vec::new(),
             flatpak_installation: None,
+            appimage_path: None,
         }));
     }
 

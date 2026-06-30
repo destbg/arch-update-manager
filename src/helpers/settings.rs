@@ -26,6 +26,7 @@ fn default_settings() -> AppSettings {
         favorite_packages: Vec::new(),
         favorites_exclusion_mode: false,
         enable_flatpak_support: is_command_available("flatpak"),
+        enable_appimage_support: true,
         enable_devel_aur: false,
         keep_old_packages: 3,
         keep_uninstalled_packages: 0,

@@ -2,6 +2,7 @@ use std::process::Command;
 
 use chrono::Utc;
 
+use arch_update_manager::helpers::appimage::get_appimage_updates;
 use arch_update_manager::helpers::aur::get_aur_updates;
 use arch_update_manager::helpers::flatpak::get_flatpak_updates;
 use arch_update_manager::helpers::network::is_network_metered;
@@ -75,11 +76,28 @@ fn main() {
         Vec::new()
     };
 
+    let appimage = if settings.enable_appimage_support {
+        match get_appimage_updates() {
+            Ok(updates) => updates
+                .into_iter()
+                .filter(|u| !blacklist.contains(&u.name))
+                .map(|u| format!("{} {} -> {}", u.name, u.current_version, u.new_version))
+                .collect(),
+            Err(e) => {
+                eprintln!("Failed to get AppImage updates: {}", e);
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
     let state = TrayState {
         last_check: Some(Utc::now()),
         packages,
         aur,
         flatpak,
+        appimage,
     };
 
     if let Err(e) = write_tray_state(&state) {

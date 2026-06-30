@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::constants::FLATPAK_NAME;
 use crate::helpers::elevated::get_original_user;
 use crate::models::flatpak_installation::FlatpakInstallation;
 use crate::models::installed_flatpak::InstalledFlatpak;
+use crate::models::package_source::PackageSource;
 use crate::models::package_update::PackageUpdate;
 
 const INSTALLATIONS: [FlatpakInstallation; 2] =
@@ -110,7 +110,8 @@ pub fn get_flatpak_updates() -> Result<Vec<PackageUpdate>> {
             };
 
             updates.push(PackageUpdate {
-                repository: FLATPAK_NAME.to_string(),
+                source: PackageSource::Flatpak,
+                repository: PackageSource::Flatpak.label().to_string(),
                 selected: true,
                 name: app_id.clone(),
                 description: format!("Flatpak application ({}): {}", scope, display_name),
@@ -133,6 +134,7 @@ pub fn get_flatpak_updates() -> Result<Vec<PackageUpdate>> {
                 pkgbuild_needs_review: false,
                 aur_scan_findings: Vec::new(),
                 flatpak_installation: Some(installation),
+                appimage_path: None,
             });
         }
     }

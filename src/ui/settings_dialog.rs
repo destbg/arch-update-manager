@@ -20,6 +20,7 @@ use crate::{
         snapshot_group::SnapshotGroup, snapshot_retention_period::SnapshotRetentionPeriod,
     },
     ui::{
+        appimage_sources::build_appimage_sources_section,
         blacklist_dialog::show_manage_blacklist_dialog, dialogs::show_confirm_dialog,
         favorites_dialog::show_manage_favorites_dialog, package_list::refresh_all_favorite_buttons,
     },
@@ -52,6 +53,9 @@ pub fn show_settings_dialog(
     let (min_update_age_spin, min_update_age_aur_only_check) =
         create_update_age_group(settings, &updates_container);
 
+    let appimage_container = build_tab_container();
+    let appimage_enable_check = create_appimage_section(settings, &appimage_container, parent);
+
     let repos_container = build_tab_container();
     let (separate_repo_check, repo_checkboxes) = create_packages_group(settings, &repos_container);
     create_blacklist_group(&repos_container, parent);
@@ -82,13 +86,16 @@ pub fn show_settings_dialog(
     let remember_unselected_check =
         create_remember_unselected_group(settings, &appearance_container);
 
+    let topbar_container = build_tab_container();
+    let news_check = create_news_group(settings, &topbar_container);
+    let mirror_refresh_check = create_mirror_group(settings, &topbar_container);
+
     let system_container = build_tab_container();
-    let news_check = create_news_group(settings, &system_container);
-    let mirror_refresh_check = create_mirror_group(settings, &system_container);
     let log_retention_spin = create_logs_group(settings, &system_container);
 
-    let categories: [(&str, &str); 6] = [
+    let categories: [(&str, &str); 8] = [
         ("Updates", "software-update-available-symbolic"),
+        ("AppImages", "application-x-executable-symbolic"),
         ("Repositories", "drive-harddisk-symbolic"),
         ("Snapshots & Cache", "document-save-symbolic"),
         (
@@ -96,15 +103,18 @@ pub fn show_settings_dialog(
             "preferences-system-notifications-symbolic",
         ),
         ("Appearance", "preferences-desktop-appearance-symbolic"),
+        ("Top Bar", "open-menu-symbolic"),
         ("System", "emblem-system-symbolic"),
     ];
 
     let containers = [
         updates_container,
+        appimage_container,
         repos_container,
         maintenance_container,
         tray_container,
         appearance_container,
+        topbar_container,
         system_container,
     ];
 
@@ -339,6 +349,11 @@ pub fn show_settings_dialog(
     flatpak_enable_check.connect_toggled(move |check| {
         let value = check.is_active();
         update_settings(move |s| s.enable_flatpak_support = value);
+    });
+
+    appimage_enable_check.connect_toggled(move |check| {
+        let value = check.is_active();
+        update_settings(move |s| s.enable_appimage_support = value);
     });
 
     keep_old_spin.connect_value_changed(move |spin| {
@@ -622,9 +637,7 @@ fn update_devel_sensitivity(
             "Also check git, svn, and bzr packages for new commits, not just version bumps.",
         ));
     } else {
-        devel_check.set_tooltip_text(Some(
-            "The selected AUR helper does not support devel mode.",
-        ));
+        devel_check.set_tooltip_text(Some("The selected AUR helper does not support devel mode."));
     }
 }
 
@@ -1353,6 +1366,33 @@ fn create_flatpak_group(settings: &AppSettings, main_container: &gtk4::Box) -> g
     }
 
     main_container.append(&section);
+
+    return check;
+}
+
+fn create_appimage_section(
+    settings: &AppSettings,
+    main_container: &gtk4::Box,
+    parent: &ApplicationWindow,
+) -> gtk4::CheckButton {
+    let section = create_preference_group(
+        "AppImage Packages",
+        "Show updates for your AppImages next to system packages.",
+    );
+
+    let check = gtk4::CheckButton::with_label("Enable AppImage support");
+    check.add_css_class("settings-check");
+    check.set_active(settings.enable_appimage_support);
+
+    section.append(&check);
+    main_container.append(&section);
+
+    let sources_section = create_preference_group(
+        "Update Sources",
+        "Pick where each AppImage looks for new versions. AppImages with no source are not checked.",
+    );
+    sources_section.append(&build_appimage_sources_section(parent));
+    main_container.append(&sources_section);
 
     return check;
 }
