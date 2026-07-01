@@ -4,18 +4,13 @@ use gtk4::{
     FileDialog, Label, ListBox, ListBoxRow, Orientation, Window, gio,
 };
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::rc::Rc;
 
-use crate::helpers::appimage::{discover_appimages, embedded_source, managed_appimages};
-use crate::helpers::appimage_config::{
-    import_shelly_sources, remove_appimage_entry, set_source_for_path, shelly_has_appimage_data,
-    source_for_path,
-};
-use crate::helpers::aur::is_command_available;
+use crate::helpers::appimage::{delete_appimage, embedded_source, managed_appimages};
+use crate::helpers::appimage_config::{set_source_for_path, source_for_path};
 use crate::log_info;
 use crate::models::appimage_update_source::AppImageUpdateSource;
-use crate::ui::dialogs::show_error_dialog;
+use crate::ui::dialogs::{show_confirm_dialog, show_error_dialog};
 
 pub fn build_appimage_sources_section(parent: &ApplicationWindow) -> GtkBox {
     let container = GtkBox::new(Orientation::Vertical, 8);
@@ -23,9 +18,6 @@ pub fn build_appimage_sources_section(parent: &ApplicationWindow) -> GtkBox {
     let actions = GtkBox::new(Orientation::Horizontal, 8);
     let add_btn = Button::with_label("Add AppImage…");
     actions.append(&add_btn);
-    let import_btn = Button::with_label("Import from shelly");
-    import_btn.set_sensitive(is_command_available("shelly") && shelly_has_appimage_data());
-    actions.append(&import_btn);
     container.append(&actions);
 
     let list = ListBox::new();
@@ -46,18 +38,9 @@ pub fn build_appimage_sources_section(parent: &ApplicationWindow) -> GtkBox {
             list_for_pop.append(&empty_row());
             return;
         }
-        let discovered: HashSet<String> =
-            discover_appimages().into_iter().map(|a| a.path).collect();
         let refresh = holder_for_pop.borrow().clone();
         for app in apps {
-            let removable = !discovered.contains(&app.path);
-            let row = build_row(
-                &parent_for_pop,
-                &app.path,
-                &app.name,
-                removable,
-                refresh.clone(),
-            );
+            let row = build_row(&parent_for_pop, &app.path, &app.name, refresh.clone());
             list_for_pop.append(&row);
         }
     });
@@ -101,26 +84,6 @@ pub fn build_appimage_sources_section(parent: &ApplicationWindow) -> GtkBox {
         );
     });
 
-    let populate_for_import = populate.clone();
-    let parent_for_import = parent.clone();
-    import_btn.connect_clicked(move |_| match import_shelly_sources() {
-        Ok((imported, skipped)) => {
-            log_info!(
-                "imported {} appimage sources from shelly, skipped {}",
-                imported,
-                skipped
-            );
-            populate_for_import();
-        }
-        Err(e) => {
-            show_error_dialog(
-                parent_for_import.upcast_ref::<Window>(),
-                "Could not import from shelly",
-                &e.to_string(),
-            );
-        }
-    });
-
     return container;
 }
 
@@ -141,7 +104,6 @@ fn build_row(
     parent: &ApplicationWindow,
     path: &str,
     name: &str,
-    removable: bool,
     refresh: Option<Rc<dyn Fn()>>,
 ) -> ListBoxRow {
     let row = ListBoxRow::new();
@@ -173,24 +135,40 @@ fn build_row(
 
     header.append(&titles);
 
-    if removable {
-        let remove_btn = Button::with_label("Remove");
-        remove_btn.set_valign(Align::Start);
-        remove_btn.add_css_class("destructive-action");
-        let path_for_remove = path.to_string();
-        let refresh_for_remove = refresh.clone();
-        remove_btn.connect_clicked(move |_| {
-            if let Err(e) = remove_appimage_entry(&path_for_remove) {
-                log_info!("failed to remove appimage {}: {}", path_for_remove, e);
-                return;
-            }
-            log_info!("removed appimage {}", path_for_remove);
-            if let Some(refresh) = &refresh_for_remove {
-                refresh();
-            }
-        });
-        header.append(&remove_btn);
-    }
+    let remove_btn = Button::with_label("Remove");
+    remove_btn.set_valign(Align::Start);
+    remove_btn.add_css_class("destructive-action");
+    let parent_for_remove = parent.clone();
+    let path_for_remove = path.to_string();
+    let name_for_remove = name.to_string();
+    let refresh_for_remove = refresh.clone();
+    remove_btn.connect_clicked(move |_| {
+        let path_inner = path_for_remove.clone();
+        let refresh_inner = refresh_for_remove.clone();
+        show_confirm_dialog(
+            &parent_for_remove,
+            "Remove AppImage",
+            &format!(
+                "Delete {}? This removes the file at {}.",
+                name_for_remove, path_inner
+            ),
+            "Remove",
+            move |accepted| {
+                if !accepted {
+                    return;
+                }
+                if let Err(e) = delete_appimage(&path_inner) {
+                    log_info!("failed to remove appimage {}: {}", path_inner, e);
+                    return;
+                }
+                log_info!("removed appimage {}", path_inner);
+                if let Some(refresh) = &refresh_inner {
+                    refresh();
+                }
+            },
+        );
+    });
+    header.append(&remove_btn);
 
     let editor_expander = Expander::new(Some("Edit update source"));
     editor_expander.set_child(Some(&build_editor(parent, path, name, &summary)));

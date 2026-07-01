@@ -35,7 +35,6 @@ pub mod security_fix;
 pub mod service_restart_outcome;
 pub mod service_row_state;
 pub mod sha1;
-pub mod shelly_appimage;
 pub mod shelly_update;
 pub mod snapshot_group;
 pub mod snapshot_retention_period;

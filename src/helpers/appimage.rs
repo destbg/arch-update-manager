@@ -1,9 +1,11 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::helpers::appimage_config::{load_appimage_entries, source_for_path};
+use crate::helpers::appimage_config::{
+    load_appimage_entries, remove_appimage_entry, source_for_path,
+};
 use crate::helpers::elevated::get_original_user;
 use crate::helpers::network::http_get;
 use crate::models::appimage_update_source::AppImageUpdateSource;
@@ -76,6 +78,15 @@ pub fn managed_appimages() -> Vec<DiscoveredAppImage> {
     }
     result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     return result;
+}
+
+pub fn delete_appimage(path: &str) -> Result<()> {
+    let file = Path::new(path);
+    if file.exists() {
+        std::fs::remove_file(file).with_context(|| format!("Failed to delete {}", path))?;
+    }
+    let _ = remove_appimage_entry(path);
+    return Ok(());
 }
 
 pub fn resolve_source(path: &str, name: &str) -> AppImageUpdateSource {
