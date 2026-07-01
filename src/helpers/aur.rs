@@ -11,7 +11,7 @@ use crate::{
     },
 };
 use anyhow::{Context, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 const AUR_RPC_TIMEOUT_SECS: u32 = 5;
@@ -117,6 +117,9 @@ pub fn get_aur_updates() -> Result<Vec<PackageUpdate>> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut updates = parse_aur_updates(&stdout, &helper)?;
+    if let Some(foreign) = foreign_package_names() {
+        updates.retain(|update| foreign.contains(&update.name));
+    }
     enrich_with_aur_info(&mut updates);
     for update in &mut updates {
         update.pkgbuild_needs_review = pkgbuild_needs_review(&update.name);
@@ -136,6 +139,19 @@ pub(crate) fn url_encode(s: &str) -> String {
         }
     }
     return out;
+}
+
+fn foreign_package_names() -> Option<HashSet<String>> {
+    let output = Command::new("pacman").arg("-Qmq").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let names = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect();
+    return Some(names);
 }
 
 fn enrich_with_aur_info(updates: &mut [PackageUpdate]) {
