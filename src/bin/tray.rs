@@ -15,12 +15,14 @@ use signal_hook::iterator::Signals;
 use arch_update_manager::helpers::settings::{load_settings, reload_settings, save_settings};
 use arch_update_manager::helpers::snooze::{clear_snooze, current_snooze_until, set_snooze};
 use arch_update_manager::helpers::tray_state::state_file;
+use arch_update_manager::helpers::unselected_packages::load_unselected_packages;
 use arch_update_manager::models::app_settings::AppSettings;
 use arch_update_manager::models::tray_state::TrayState;
 
 static REFRESH_TX: OnceLock<mpsc::Sender<()>> = OnceLock::new();
 
 const FALLBACK_POLL_INTERVAL: Duration = Duration::from_secs(300);
+const TRAY_HOST_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 const ICON_NO_UPDATES: &str = "arch-update-manager";
 const ICON_UPDATES_AVAILABLE: &str = "software-update-available-symbolic";
 
@@ -53,10 +55,26 @@ impl ArchUpdateTray {
         let settings = load_settings();
         let filter_by_favorites = settings.enable_favorites
             && (settings.tray_only_favorites || settings.tray_menu_only_favorites);
-        if filter_by_favorites {
-            return count_favorite_updates(&self.state, &settings);
-        }
-        return self.state.total();
+        let unselected = if settings.remember_unselected_packages {
+            load_unselected_packages()
+        } else {
+            Vec::new()
+        };
+        return self
+            .state
+            .packages
+            .iter()
+            .chain(self.state.aur.iter())
+            .chain(self.state.flatpak.iter())
+            .chain(self.state.appimage.iter())
+            .filter(|line| {
+                let name = package_name_from_entry(line);
+                if filter_by_favorites && !settings.is_favorite(name) {
+                    return false;
+                }
+                return !unselected.iter().any(|p| p == name);
+            })
+            .count();
     }
 
     fn prompt_remove_favorite(&self, package: String) {
@@ -544,24 +562,29 @@ fn main() {
     let initial_state = read_state(&path);
     let expect_check_notification = Arc::new(AtomicBool::new(false));
 
+    let mut logged_wait = false;
+    let handle = loop {
+        let tray = ArchUpdateTray {
+            state: initial_state.clone(),
+            expect_check_notification: expect_check_notification.clone(),
+        };
+        match tray.spawn() {
+            Ok(h) => break h,
+            Err(e) => {
+                if !logged_wait {
+                    eprintln!("Tray host not available yet, waiting: {}", e);
+                    logged_wait = true;
+                }
+                thread::sleep(TRAY_HOST_RETRY_INTERVAL);
+            }
+        }
+    };
+
     thread::spawn(|| {
         if let Err(e) = std::process::Command::new("arch-update-manager-check").status() {
             eprintln!("Failed to run initial check on tray startup: {}", e);
         }
     });
-
-    let tray = ArchUpdateTray {
-        state: initial_state.clone(),
-        expect_check_notification: expect_check_notification.clone(),
-    };
-
-    let handle = match tray.spawn() {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("Failed to spawn tray: {}", e);
-            std::process::exit(1);
-        }
-    };
 
     let last_seen = Arc::new(Mutex::new(initial_state));
     let path_clone = path.clone();

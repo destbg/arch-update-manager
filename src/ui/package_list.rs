@@ -139,6 +139,7 @@ pub fn save_unselected_from_store(store: &ListStore) {
     }
 
     save_unselected_packages(unselected);
+    kick_tray();
 }
 
 pub(crate) fn prefers_dark() -> bool {
