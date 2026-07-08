@@ -1385,9 +1385,9 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "sourceview5"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "523d92c25045879b653b3b1233649cb3bb0050c37c0b7ccee4e2a8e9be7f17e4"
+checksum = "00452f1903ed75d5f3d5993d1f22e88c53eb01554cc1a3ea698ca9fe4fffc82e"
 dependencies = [
  "futures-channel",
  "futures-core",
