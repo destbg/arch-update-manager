@@ -323,6 +323,13 @@ fn parse_aur_updates(output: &str, helper: &AurManagers) -> Result<Vec<PackageUp
         }
     }
 
+    if updates.is_empty() && !output.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "AUR helper {} produced non-empty output, but no updates could be parsed",
+            helper.command()
+        ));
+    }
+
     return Ok(updates);
 }
 
@@ -369,11 +376,14 @@ fn parse_shelly_updates(output: &str) -> Result<Vec<PackageUpdate>> {
 
 fn parse_standard_aur_line(line: &str) -> Result<Option<PackageUpdate>> {
     let parts: Vec<&str> = line.split_whitespace().collect();
+    let Some(arrow) = parts.iter().position(|part| *part == "->") else {
+        return Ok(None);
+    };
 
-    if parts.len() >= 4 && parts[parts.len() - 2] == "->" {
+    if arrow >= 2 && arrow + 1 < parts.len() {
         let package_name = parts[0].to_string();
         let current_version = parts[1].to_string();
-        let new_version = parts[parts.len() - 1].to_string();
+        let new_version = parts[arrow + 1].to_string();
 
         return Ok(Some(PackageUpdate {
             source: PackageSource::Aur,
