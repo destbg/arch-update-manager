@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -30,6 +31,7 @@ pub fn appimage_dirs() -> Vec<PathBuf> {
 
 pub fn discover_appimages() -> Vec<DiscoveredAppImage> {
     let mut found = Vec::new();
+    let mut seen = HashSet::new();
     for dir in appimage_dirs() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
@@ -40,6 +42,12 @@ pub fn discover_appimages() -> Vec<DiscoveredAppImage> {
                 continue;
             }
             if !is_appimage_file(&path) {
+                continue;
+            }
+            let Ok(path) = path.canonicalize() else {
+                continue;
+            };
+            if !seen.insert(path.clone()) {
                 continue;
             }
             let name = path
@@ -58,7 +66,7 @@ pub fn discover_appimages() -> Vec<DiscoveredAppImage> {
 }
 
 pub fn managed_appimages() -> Vec<DiscoveredAppImage> {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
     let mut result = Vec::new();
     for app in discover_appimages() {
         if seen.insert(app.path.clone()) {
@@ -66,12 +74,16 @@ pub fn managed_appimages() -> Vec<DiscoveredAppImage> {
         }
     }
     for entry in load_appimage_entries() {
-        if !seen.insert(entry.path.clone()) {
+        let Ok(path) = Path::new(&entry.path).canonicalize() else {
+            continue;
+        };
+        if !path.is_file() {
             continue;
         }
-        if Path::new(&entry.path).is_file() {
+        let path = path.to_string_lossy().into_owned();
+        if seen.insert(path.clone()) {
             result.push(DiscoveredAppImage {
-                path: entry.path,
+                path,
                 name: entry.name,
             });
         }
@@ -149,8 +161,18 @@ pub fn get_appimage_updates() -> Result<Vec<PackageUpdate>> {
 
 pub fn build_appimage_update_commands(packages: &[&PackageUpdate]) -> Vec<String> {
     let mut commands = Vec::new();
+    let mut seen = HashSet::new();
     for pkg in packages {
         let Some(path) = pkg.appimage_path.as_ref() else {
+            continue;
+        };
+        let Ok(target) = Path::new(path).canonicalize() else {
+            continue;
+        };
+        if seen.contains(&target) {
+            continue;
+        }
+        let Some(target_path) = target.to_str() else {
             continue;
         };
         let Some(download_url) = pkg
@@ -160,7 +182,8 @@ pub fn build_appimage_update_commands(packages: &[&PackageUpdate]) -> Vec<String
         else {
             continue;
         };
-        if let Some(command) = build_one_command(&pkg.name, path, &download_url) {
+        if let Some(command) = build_one_command(&pkg.name, target_path, &download_url) {
+            seen.insert(target);
             commands.push(command);
         }
     }

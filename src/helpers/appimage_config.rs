@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::helpers::elevated::chown_to_user;
 use crate::models::appimage_entry::AppImageEntry;
@@ -29,9 +29,14 @@ pub fn save_appimage_entries(entries: &[AppImageEntry]) -> Result<()> {
 }
 
 pub fn source_for_path(path: &str) -> Option<AppImageUpdateSource> {
-    return load_appimage_entries()
+    let entries = load_appimage_entries();
+    if let Some(entry) = entries.iter().find(|entry| entry.path == path) {
+        return Some(entry.source.clone());
+    }
+    let target = Path::new(path).canonicalize().ok()?;
+    return entries
         .into_iter()
-        .find(|entry| entry.path == path)
+        .find(|entry| Path::new(&entry.path).canonicalize().ok().as_ref() == Some(&target))
         .map(|entry| entry.source);
 }
 
