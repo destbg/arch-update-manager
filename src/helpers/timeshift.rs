@@ -42,7 +42,7 @@ pub fn cleanup_timeshift_snapshots(
     }
     snaps.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut same_comment: Vec<(String, Option<String>)> = snaps
+    let same_comment: Vec<(String, Option<String>)> = snaps
         .into_iter()
         .filter(|(_, c)| c.as_deref() == Some(comment))
         .collect();
@@ -60,20 +60,20 @@ pub fn cleanup_timeshift_snapshots(
         SnapshotRetentionPeriod::Year => Some(now - Duration::days(365)),
     };
 
-    if let Some(cutoff) = cutoff_time {
-        same_comment.retain(|(name, _)| {
-            if let Ok(snapshot_time) = parse_snapshot_timestamp(name) {
-                snapshot_time >= cutoff
-            } else {
-                true // Keep snapshots we can't parse
-            }
-        });
-    }
-
-    if same_comment.len() > settings.snapshot_retention_count as usize {
-        let keep_count = settings.snapshot_retention_count as usize;
-        let to_delete = same_comment.len() - keep_count;
-        let snapshots_to_delete: Vec<_> = same_comment.drain(0..to_delete).collect();
+    if same_comment.len() > settings.snapshot_retention_count as usize || cutoff_time.is_some() {
+        let to_delete = same_comment
+            .len()
+            .saturating_sub(settings.snapshot_retention_count as usize);
+        let snapshots_to_delete: Vec<_> = same_comment
+            .into_iter()
+            .enumerate()
+            .filter(|(index, (name, _))| {
+                return *index < to_delete || cutoff_time.is_some_and(|cutoff| {
+                    return parse_snapshot_timestamp(name).is_ok_and(|time| time < cutoff);
+                });
+            })
+            .map(|(_, snapshot)| snapshot)
+            .collect();
 
         for (name, _) in snapshots_to_delete {
             if name == keep_snapshot {
