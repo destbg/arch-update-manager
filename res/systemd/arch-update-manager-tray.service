@@ -5,6 +5,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
+ExecStartPre=/usr/bin/sleep 10
 ExecStart=/usr/bin/arch-update-manager-tray
 Restart=on-failure
 RestartSec=3

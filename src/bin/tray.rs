@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -33,12 +34,15 @@ struct ArchUpdateTray {
 
 impl ArchUpdateTray {
     fn launch_main_app() {
-        if let Err(e) = std::process::Command::new("pkexec")
-            .arg("arch-update-manager")
-            .spawn()
-        {
-            eprintln!("Failed to launch arch-update-manager: {}", e);
-        }
+        thread::spawn(
+            || match Command::new("pkexec").arg("arch-update-manager").status() {
+                Ok(status) if !status.success() => {
+                    eprintln!("arch-update-manager exited unsuccessfully. {}", status);
+                }
+                Ok(_) => {}
+                Err(e) => eprintln!("Failed to launch or wait for arch-update-manager. {}", e),
+            },
+        );
     }
 
     fn run_check(&self) {

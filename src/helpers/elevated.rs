@@ -40,6 +40,22 @@ pub fn get_original_user() -> Option<String> {
     return None;
 }
 
+pub fn get_user_home(user: &str) -> Option<String> {
+    let output = Command::new("getent")
+        .args(["passwd", user])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let entry = String::from_utf8(output.stdout).ok()?;
+    let home = entry.split(':').nth(5)?;
+    if !Path::new(home).is_absolute() {
+        return None;
+    }
+    return Some(home.to_string());
+}
+
 pub fn open_url_as_user(url: &str) {
     if !is_safe_url(url) {
         return;

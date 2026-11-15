@@ -1,8 +1,11 @@
+use std::env;
+use std::ffi::OsString;
 use std::fs;
+use std::io::Result;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output};
 
-use crate::helpers::elevated::{chown_to_user, get_original_user};
+use crate::helpers::elevated::{chown_to_user, get_original_user, get_user_home};
 use crate::models::check_schedule::CheckSchedule;
 
 const LEGACY_AUTOSTART_FILENAME: &str = "arch-update-manager-tray.desktop";
@@ -26,8 +29,8 @@ pub fn apply_tray_state(enabled: bool) {
     remove_legacy_autostart_file();
 
     if enabled {
-        run_user_systemctl(&["enable", "--now", TIMER_UNIT]);
-        run_user_systemctl(&["enable", "--now", TRAY_SERVICE]);
+        run_user_systemctl(&["enable", "--now", "--no-block", TIMER_UNIT]);
+        run_user_systemctl(&["enable", "--now", "--no-block", TRAY_SERVICE]);
     } else {
         run_user_systemctl(&["disable", "--now", TIMER_UNIT]);
         run_user_systemctl(&["disable", "--now", TRAY_SERVICE]);
@@ -51,15 +54,15 @@ pub fn has_systemd_user_session() -> bool {
 }
 
 fn write_check_timer_override(schedule: CheckSchedule) -> std::io::Result<()> {
-    let Some(home) = user_home() else {
+    let Some(config) = user_config_dir() else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "could not determine user home",
+            "Could not determine the configuration folder",
         ));
     };
 
-    let dir = PathBuf::from(&home)
-        .join(".config/systemd/user")
+    let dir = config
+        .join("systemd/user")
         .join(format!("{}.d", TIMER_UNIT));
     fs::create_dir_all(&dir)?;
 
@@ -86,51 +89,59 @@ fn remove_legacy_autostart_file() {
 }
 
 fn autostart_dir() -> Option<PathBuf> {
-    if let Some(home) = user_home() {
-        return Some(PathBuf::from(home).join(".config/autostart"));
+    return Some(user_config_dir()?.join("autostart"));
+}
+
+fn user_config_dir() -> Option<PathBuf> {
+    if let Some(config) = env::var_os("XDG_CONFIG_HOME") {
+        let config = PathBuf::from(config);
+        if config.is_absolute() {
+            return Some(config);
+        }
     }
-    return None;
+    return Some(PathBuf::from(user_home()?).join(".config"));
 }
 
 fn user_home() -> Option<String> {
     if let Some(user) = get_original_user() {
-        return Some(format!("/home/{}", user));
+        return get_user_home(&user);
     }
-    return std::env::var("HOME").ok();
+    return env::var("HOME").ok();
 }
 
 fn run_user_systemctl(args: &[&str]) {
+    let Some(config) = user_config_dir() else {
+        return;
+    };
     let Some(user) = get_original_user() else {
-        let output = Command::new("systemctl").arg("--user").args(args).output();
-        log_systemctl_result(args, output);
+        let output = Command::new("systemctl")
+            .env("XDG_CONFIG_HOME", &config)
+            .arg("--user")
+            .args(args)
+            .output();
+        log_systemctl_result(args, &output);
         return;
     };
 
-    let uid = match user_uid(&user) {
-        Some(uid) => uid,
-        None => return,
+    let Some(uid) = user_uid(&user) else {
+        return;
     };
 
     let xdg_runtime = format!("XDG_RUNTIME_DIR=/run/user/{}", uid);
     let dbus_addr = format!("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{}/bus", uid);
 
-    let mut sudo_args: Vec<String> = vec![
-        "-u".to_string(),
-        user.clone(),
-        xdg_runtime,
-        dbus_addr,
-        "systemctl".to_string(),
-        "--user".to_string(),
-    ];
-    for arg in args {
-        sudo_args.push((*arg).to_string());
-    }
-
-    let output = Command::new("sudo").args(&sudo_args).output();
-    log_systemctl_result(args, output);
+    let mut xdg_config = OsString::from("XDG_CONFIG_HOME=");
+    xdg_config.push(config.as_os_str());
+    let output = Command::new("sudo")
+        .args(["-u", &user, &xdg_runtime, &dbus_addr])
+        .arg(xdg_config)
+        .args(["systemctl", "--user"])
+        .args(args)
+        .output();
+    log_systemctl_result(args, &output);
 }
 
-fn log_systemctl_result(args: &[&str], output: std::io::Result<std::process::Output>) {
+fn log_systemctl_result(args: &[&str], output: &Result<Output>) {
     match output {
         Ok(o) if !o.status.success() => {
             let stderr = String::from_utf8_lossy(&o.stderr);

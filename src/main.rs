@@ -1,4 +1,5 @@
 use arch_update_manager::constants::APP_ID;
+use arch_update_manager::helpers::elevated::{get_original_user, get_user_home};
 use arch_update_manager::helpers::logger;
 use arch_update_manager::helpers::settings::load_settings;
 use arch_update_manager::log_info;
@@ -128,9 +129,8 @@ fn detect_prefers_dark() -> Option<bool> {
 
 fn setup_user_environment() {
     let is_root = env::var("USER").unwrap_or_default() == "root";
-    let no_dbus = env::var("DBUS_SESSION_BUS_ADDRESS").is_err();
 
-    if !is_root || !no_dbus {
+    if !is_root {
         return;
     }
 
@@ -149,8 +149,8 @@ fn setup_user_environment() {
 }
 
 fn find_target_user() -> Option<String> {
-    if let Some(sudo_user) = env::var("SUDO_USER").ok() {
-        return Some(sudo_user);
+    if let Some(user) = get_original_user() {
+        return Some(user);
     }
 
     if let Some(user) = find_user_from_who() {
@@ -199,7 +199,9 @@ fn get_user_uid(user: &str) -> Option<String> {
 }
 
 fn set_user_environment_vars(user: &str, uid: &str) {
-    let user_home = format!("/home/{}", user);
+    let Some(user_home) = get_user_home(user) else {
+        return;
+    };
 
     unsafe {
         if env::var("XDG_RUNTIME_DIR").is_err() {
